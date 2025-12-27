@@ -44,19 +44,13 @@ pip install -r requirements.txt
 **Required packages:**
 - `requests` - HTTP requests to Plex/Overseerr
 - `flask` - Web UI server
+- `schedule` - Backup scheduler
 
 ### 3. Get API Tokens
 
-**Plex Token:**
-1. Go to Plex Settings → Account
-2. Scroll down to "Access Tokens" 
-3. Find your token under a server name
-4. Or: Visit `http://YOUR-PLEX:32400/identity` and check XML for token
-
-**Overseerr Token:**
-1. Open Overseerr
-2. Go to Settings → Users → API Keys
-3. Click "Create API Key"
+See [GET_TOKENS.md](GET_TOKENS.md) for detailed instructions on getting:
+- **Plex Token** - Visit `http://YOUR-PLEX-IP:32400/identity` and find the `token` value in XML
+- **Overseerr Token** - Settings → API Keys → Create API Key
 
 ## Usage
 
