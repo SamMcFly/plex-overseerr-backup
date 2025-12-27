@@ -73,7 +73,8 @@ Then open `http://localhost:5000` in your browser.
 3. Enter Plex API Token
 4. Enter Overseerr URL (e.g., `http://localhost:5055`)
 5. Enter Overseerr API Token
-6. Click "Test Connection"
+6. Click "Save Settings" to save your configuration
+7. Click "Test Connection" to verify everything works
 
 ### Option B: Automated Backups
 

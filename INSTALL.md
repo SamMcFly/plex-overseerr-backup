@@ -46,7 +46,8 @@ Open browser to: **http://localhost:5000**
 1. Click "Setup" tab
 2. Enter your Plex URL and token
 3. Enter your Overseerr URL and token
-4. Click "Test Connection"
+4. Click "Save Settings" to save your configuration
+5. Click "Test Connection" to verify everything works
 
 ### 7. Create Your First Backup
 
