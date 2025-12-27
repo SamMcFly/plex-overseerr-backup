@@ -22,7 +22,46 @@ pip install -r requirements.txt
 
 The `schedule` library is required for scheduled backups.
 
-## Quick Start
+## Choose Your Scheduling Method
+
+The backup scheduler supports three methods:
+
+### 1. Windows Task Scheduler (Windows Users)
+
+Generate Windows Task Scheduler command:
+```bash
+python backup_scheduler.py --windows-task 02:00
+```
+
+You'll get:
+- GUI instructions (easy point-and-click)
+- OR PowerShell command (copy & paste)
+
+Choose whichever is easier for you!
+
+### 2. Crontab (Linux/Mac Users)
+
+Generate crontab line:
+```bash
+python backup_scheduler.py --crontab 02:00
+```
+
+Then add to crontab:
+```bash
+crontab -e
+# Paste the generated line
+```
+
+### 3. Python Scheduler (All Platforms)
+
+Run the built-in scheduler (no system configuration needed):
+```bash
+python backup_scheduler.py --daily 02:00
+```
+
+Runs continuously and handles scheduling automatically.
+
+---
 
 ### One-Time Backup (Right Now)
 
@@ -111,8 +150,10 @@ python backup_scheduler.py --daily 02:00 --retention 90
 --no-verify             Skip file verification (faster)
 --list                  List all backups
 --cleanup DAYS          Remove backups older than DAYS
---daily HH:MM           Schedule daily backup at HH:MM
---weekly DAY HH:MM      Schedule weekly backup
+--daily HH:MM           Schedule daily backup at HH:MM (using Python scheduler)
+--weekly DAY HH:MM      Schedule weekly backup (using Python scheduler)
+--crontab HH:MM         Generate crontab line for Linux/Mac
+--windows-task HH:MM    Generate Windows Task Scheduler command
 --verify                Verify files during backup (default)
 --retention DAYS        Keep backups for DAYS (default: 30)
 ```
@@ -165,10 +206,43 @@ This way you have:
 
 ## Using with System Scheduler
 
-Instead of running the Python scheduler continuously, use your system's scheduler:
+Instead of running the Python scheduler continuously, use your system's scheduler.
+Use the `--crontab` or `--windows-task` options to generate the commands for you!
 
-### Linux/Mac - Cron
+### Linux/Mac - Cron (Easy Way)
 
+Use the crontab generator:
+```bash
+# Generate daily backup at 2 AM
+python backup_scheduler.py --crontab 02:00
+
+# Generate weekly backup on Sunday at 2 AM  
+python backup_scheduler.py --crontab 02:00 --weekly sunday 02:00
+```
+
+Copy the output and add to crontab:
+```bash
+crontab -e
+```
+
+### Windows - Task Scheduler (Easy Way)
+
+Use the Windows task generator:
+```bash
+# Generate daily backup at 2 AM
+python backup_scheduler.py --windows-task 02:00
+
+# Generate weekly backup on Sunday at 2 AM
+python backup_scheduler.py --windows-task 02:00 --weekly sunday 02:00
+```
+
+Follow the displayed instructions (GUI or PowerShell)
+
+### Advanced: Manual Setup
+
+If you prefer manual setup:
+
+**Linux/Mac - Cron**
 ```bash
 # Daily backup at 2 AM
 0 2 * * * cd /path/to/plex-overseerr-backup && python backup_scheduler.py --backup-now --cleanup 30
@@ -182,16 +256,15 @@ Add to crontab:
 crontab -e
 ```
 
-### Windows - Task Scheduler
+**Windows - Task Scheduler (PowerShell)**
 
-1. Open Task Scheduler
-2. Create Basic Task
-3. Name: "Plex Backup"
-4. Trigger: Daily at 2:00 AM
-5. Action: Start program
-   - Program: `python.exe`
-   - Arguments: `backup_scheduler.py --backup-now --cleanup 30`
-   - Start in: `/path/to/plex-overseerr-backup`
+Run as Administrator:
+```powershell
+$trigger = New-ScheduledTaskTrigger -Daily -At "02:00"
+$action = New-ScheduledTaskAction -Execute "python.exe" -Argument "backup_scheduler.py --backup-now --cleanup 30" -WorkingDirectory "C:\path\to\plex-overseerr-backup"
+$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable
+Register-ScheduledTask -TaskName "PlexBackup" -Trigger $trigger -Action $action -Settings $settings -Force
+```
 
 ### Docker/System Service (Linux)
 

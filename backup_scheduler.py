@@ -203,6 +203,115 @@ class BackupScheduler:
         except Exception as e:
             logger.error(f"Scheduler error: {e}")
             return False
+    
+    def generate_crontab_line(self, time_str, day=None):
+        """Generate crontab line for backup"""
+        try:
+            hour, minute = map(int, time_str.split(':'))
+            
+            if day:
+                # Weekly backup
+                day_num = {
+                    'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4,
+                    'friday': 5, 'saturday': 6, 'sunday': 0
+                }.get(day.lower())
+                
+                if day_num is None:
+                    logger.error(f"Invalid day: {day}")
+                    return None
+                
+                cron_line = f"{minute} {hour} * * {day_num}"
+            else:
+                # Daily backup
+                cron_line = f"{minute} {hour} * * *"
+            
+            # Get current working directory
+            cwd = Path.cwd()
+            cmd = f"cd {cwd} && python backup_scheduler.py --backup-now --cleanup 30"
+            
+            return f"{cron_line} {cmd}"
+        except Exception as e:
+            logger.error(f"Error generating crontab: {e}")
+            return None
+    
+    def generate_windows_task(self, time_str, day=None):
+        """Generate Windows Task Scheduler command"""
+        try:
+            hour, minute = map(int, time_str.split(':'))
+            
+            # Get current working directory
+            cwd = Path.cwd()
+            
+            # Windows task name
+            task_name = "PlexBackup"
+            
+            # Command to run
+            cmd = f'python backup_scheduler.py --backup-now --cleanup 30'
+            
+            logger.info("\n" + "="*70)
+            logger.info("WINDOWS TASK SCHEDULER SETUP")
+            logger.info("="*70)
+            
+            if day:
+                logger.info(f"\nCreate a weekly backup every {day.capitalize()} at {hour:02d}:{minute:02d}")
+            else:
+                logger.info(f"\nCreate a daily backup every day at {hour:02d}:{minute:02d}")
+            
+            logger.info("\nOption 1: Using GUI (Easiest)")
+            logger.info("-" * 70)
+            logger.info("1. Open Task Scheduler (search 'Task Scheduler' in Windows)")
+            logger.info("2. Click 'Create Basic Task' in right panel")
+            logger.info(f"3. Name: {task_name}")
+            logger.info("4. Trigger:")
+            
+            if day:
+                logger.info(f"   - Frequency: Weekly")
+                logger.info(f"   - Day: {day.capitalize()}")
+            else:
+                logger.info(f"   - Frequency: Daily")
+            
+            logger.info(f"   - Time: {hour:02d}:{minute:02d}")
+            logger.info("5. Action:")
+            logger.info(f"   - Program/script: python.exe")
+            logger.info(f"   - Arguments: backup_scheduler.py --backup-now --cleanup 30")
+            logger.info(f"   - Start in: {cwd}")
+            logger.info("6. Click Finish")
+            
+            logger.info("\nOption 2: Using PowerShell (Command Line)")
+            logger.info("-" * 70)
+            logger.info("Run these PowerShell commands as Administrator:")
+            logger.info("")
+            
+            if day:
+                day_num = {
+                    'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4,
+                    'friday': 5, 'saturday': 6, 'sunday': 0
+                }.get(day.lower(), 0)
+                
+                script = f'''
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek {day.capitalize()} -At "{hour:02d}:{minute:02d}"
+$action = New-ScheduledTaskAction -Execute "python.exe" -Argument "backup_scheduler.py --backup-now --cleanup 30" -WorkingDirectory "{cwd}"
+$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable
+Register-ScheduledTask -TaskName "{task_name}" -Trigger $trigger -Action $action -Settings $settings -Force
+'''
+            else:
+                script = f'''
+$trigger = New-ScheduledTaskTrigger -Daily -At "{hour:02d}:{minute:02d}"
+$action = New-ScheduledTaskAction -Execute "python.exe" -Argument "backup_scheduler.py --backup-now --cleanup 30" -WorkingDirectory "{cwd}"
+$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable
+Register-ScheduledTask -TaskName "{task_name}" -Trigger $trigger -Action $action -Settings $settings -Force
+'''
+            
+            logger.info(script.strip())
+            logger.info("")
+            logger.info("To remove the task later:")
+            logger.info("Unregister-ScheduledTask -TaskName PlexBackup -Confirm:$false")
+            logger.info("="*70 + "\n")
+            
+            return script
+        except Exception as e:
+            logger.error(f"Error generating Windows task: {e}")
+            return None
 
 
 def main():
@@ -218,10 +327,22 @@ Examples:
   # One-time backup with cleanup
   python backup_scheduler.py --backup-now --cleanup 30
 
-  # Schedule daily at 2 AM with verification
+  # Generate crontab line for daily backup at 2 AM (Linux/Mac)
+  python backup_scheduler.py --crontab 02:00
+
+  # Generate crontab line for weekly backup on Sunday (Linux/Mac)
+  python backup_scheduler.py --crontab 02:00 --weekly sunday 02:00
+
+  # Generate Windows Task Scheduler command for daily backup at 2 AM
+  python backup_scheduler.py --windows-task 02:00
+
+  # Generate Windows Task Scheduler for weekly backup on Sunday
+  python backup_scheduler.py --windows-task 02:00 --weekly sunday 02:00
+
+  # Schedule daily at 2 AM using Python scheduler (runs continuously)
   python backup_scheduler.py --daily 02:00 --verify
 
-  # Schedule weekly on Sunday at 2 AM
+  # Schedule weekly on Sunday at 2 AM using Python scheduler
   python backup_scheduler.py --weekly sunday 02:00
 
   # List existing backups
@@ -252,6 +373,10 @@ Examples:
                        help='Verify files exist during backup (default: True)')
     parser.add_argument('--retention', type=int, default=30, metavar='DAYS',
                        help='Days to keep backups (default: 30)')
+    parser.add_argument('--crontab', metavar='HH:MM',
+                       help='Generate crontab line for Linux/Mac (use with --daily or --weekly)')
+    parser.add_argument('--windows-task', metavar='HH:MM',
+                       help='Generate Windows Task Scheduler command (use with --daily or --weekly)')
     
     args = parser.parse_args()
     
@@ -273,6 +398,34 @@ Examples:
     # Handle cleanup only
     if args.cleanup:
         scheduler.cleanup_old_backups(days_to_keep=args.cleanup)
+        return
+    
+    # Handle crontab generation
+    if args.crontab:
+        if args.weekly:
+            day, time_str = args.weekly
+            cron_line = scheduler.generate_crontab_line(args.crontab, day=day)
+        else:
+            cron_line = scheduler.generate_crontab_line(args.crontab)
+        
+        if cron_line:
+            logger.info("\n" + "="*70)
+            logger.info("CRONTAB LINE (Linux/Mac)")
+            logger.info("="*70)
+            logger.info("Add this line to your crontab (crontab -e):")
+            logger.info("")
+            logger.info(cron_line)
+            logger.info("")
+            logger.info("="*70 + "\n")
+        return
+    
+    # Handle Windows task generation
+    if args.windows_task:
+        if args.weekly:
+            day, time_str = args.weekly
+            scheduler.generate_windows_task(args.windows_task, day=day)
+        else:
+            scheduler.generate_windows_task(args.windows_task)
         return
     
     # Handle scheduling
