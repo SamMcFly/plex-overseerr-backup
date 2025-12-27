@@ -1,50 +1,69 @@
 # Getting API Tokens
 
-## Plex Token (XML Method - Most Reliable)
+## Plex Token (Official Plex Method)
 
-### Step 1: Access Plex Identity XML
+Follow the official Plex documentation: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
 
-Visit this URL in your browser (replace YOUR-PLEX-IP with your Plex server IP):
+### Quick Summary:
 
+**Option 1: Plex Web Settings (Easiest)**
+1. Open Plex Web: `http://YOUR-PLEX-IP:32400/web`
+2. Click your profile icon (top right)
+3. Click "Settings"
+4. Click "Account" in left menu
+5. Scroll to "Authorized Devices"
+6. Click the "Show Token" button
+7. Copy your token
+
+**Option 2: Browser Inspector (If Option 1 doesn't work)**
+1. Open Plex Web: `http://YOUR-PLEX-IP:32400/web`
+2. Press F12 to open Developer Tools
+3. Go to "Storage" or "Application" tab
+4. Click "Cookies"
+5. Look for `auth-token` or `myPlexAccessToken`
+6. Copy the value
+
+**Option 3: Access Library XML (Alternative)**
+Visit this URL in your browser:
 ```
-http://YOUR-PLEX-IP:32400/identity
-```
-
-**Examples:**
-- `http://192.168.1.100:32400/identity`
-- `http://plex.local:32400/identity`
-- `http://localhost:32400/identity`
-
-### Step 2: Find the Token
-
-You'll see XML that looks like:
-
-```xml
-<MediaContainer friendlyName="My Plex Server" 
-                 machineIdentifier="abc123def456ghi" 
-                 version="1.24.5.5173">
-  <Device name="Plex Web" 
-           publicAddress="1.2.3.4" 
-           token="YOUR_TOKEN_HERE_LONG_STRING" 
-           protocolVersion="1" 
-           protocolCapabilities="timeline,playback,navigation,playqueues"/>
-</MediaContainer>
+http://YOUR-PLEX-IP:32400/library/sections
 ```
 
-### Step 3: Copy Your Token
+If the page loads, you have API access. You can also:
+1. Right-click → "Save Page As"
+2. Save as `plex.xml`
+3. Open in text editor
+4. Look for token references
 
-Find the `token="` part and copy the value after it.
+**Option 4: Check Plex Config Files**
 
-**Example:**
+On your Plex server machine:
+
+**Linux:**
+```bash
+grep PlexOnlineToken ~/.plex/Plex\ Media\ Server/Preferences.xml
 ```
-token="xF2kP9nQ8mL7rJ4sT3vW"
+
+**Windows:**
+```
+C:\Users\[YourUsername]\AppData\Local\Plex Media Server\Preferences.xml
 ```
 
-The token is that long string of random characters.
+Search for `PlexOnlineToken` attribute
 
-### Step 4: Use It
+**macOS:**
+```bash
+grep PlexOnlineToken ~/Library/Application\ Support/Plex\ Media\ Server/Preferences.xml
+```
 
-Paste this token into the Plex API Token field in the tool.
+**Docker:**
+```bash
+docker exec plex grep PlexOnlineToken /config/Library/Application\ Support/Plex\ Media\ Server/Preferences.xml
+```
+
+### Step 5: Use It
+
+Paste the token into the Plex API Token field in the setup.
 
 ---
 
