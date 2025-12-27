@@ -120,32 +120,33 @@ python ui.py
 
 - Read full README.md for detailed documentation
 - Schedule regular backups (weekly/monthly)
-- Test restore process before you need it
-- Keep backups in safe location
+- Test restore process with a small backup first
+- Keep backups in safe location (external drive, cloud storage)
 
-## Important: Recovery Best Practices
+## After Disaster: Recovery Process
 
-**Before recovering from data loss**, follow this order:
+**If files are lost from your storage:**
 
-1. **Update Plex Library** (Critical!)
-   - Files must be deleted from disk
-   - Go to Library → Settings → "Optimize Library" or scan
-   - Wait for Plex to update and recognize missing files
+1. **Update Plex Library**
+   - Go to Library → Settings
+   - Run "Optimize Library" or library scan
+   - Wait for Plex to recognize missing files
 
-2. **Sync Overseerr** (Critical!)
+2. **Sync Overseerr**
    - Go to Settings → Integrations → Plex
-   - Click "Test Connection" or resync
-   - Wait for Overseerr to update its cache
+   - Click "Test Connection" or "Resync"
+   - Wait for full sync to complete
 
-3. **Then run restore**
-   - Create new backup
-   - Review missing files
+3. **Then Run Restore**
+   - Create new backup: `python backup_scheduler.py --backup-now`
+   - Review missing files in web UI
    - Start restore process
+   - Monitor Overseerr for downloads
 
-**Why this matters:**
-- If Plex doesn't know files are missing, backup won't detect them
-- If Overseerr's cache is stale, it will ignore restore requests
-- Following this order ensures recovery works correctly
+**Why both steps matter:**
+- Plex must scan to know files are missing
+- Overseerr must resync to request missing files
+- Both must complete before restore will work correctly
 
 ## Support
 

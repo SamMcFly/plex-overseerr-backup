@@ -2,45 +2,83 @@
 
 A disaster recovery tool for Plex media libraries that backs up metadata and allows recovery through Overseerr.
 
-## Important Limitations
+## Normal Operation: Regular Backups
 
-### Overseerr Library Sync
+Just run backups on a schedule (daily, weekly, monthly - your choice):
 
-**If Overseerr thinks you already have the files**, it will ignore restore requests. This happens when:
-- Files were deleted from your storage
-- But Overseerr has not synced with Plex yet
-- Overseerr still sees the files in its cache
+```bash
+# Daily backup at 2 AM
+python backup_scheduler.py --daily 02:00
 
-**Solution:** Force Overseerr to resync before restore:
-1. Go to Overseerr Settings → Integrations → Plex
-2. Click "Test Connection" or "Resync"
-3. Wait for sync to complete
-4. Then run the restore process
+# Or one-time backup
+python backup_scheduler.py --backup-now
+```
 
-### Plex Library Not Updated
+Store backups in a safe location (external drive, cloud storage, different NAS, etc).
 
-**If files are missing but Plex hasn't scanned yet**, the backup will not know they're missing:
-- You delete files from disk
-- But haven't run "Optimize Library" or library scan
-- Backup still thinks files are there
-- Restore won't process them as missing
+## Disaster Recovery: After Files Are Lost
 
-**Solution:** Update Plex library before backup:
-1. Delete or lose files from your storage
+**Only follow these steps AFTER files have been lost from your storage.**
+
+### Step 1: Update Plex Library
+
+Plex must scan and recognize that files are missing:
+
+1. Files have been lost from your storage (hardware failure, accidental deletion, etc)
 2. Go to Plex → Library → Settings
 3. Run "Optimize Library" or full library scan
-4. Wait for scan to complete
-5. Then run backup
+4. Wait for scan to complete (Plex must recognize missing files)
+5. Proceed to Step 2
 
-### Recommended Recovery Workflow
+### Step 2: Sync Overseerr
 
-1. **Discover data loss** (files are missing from storage)
-2. **Update Plex** - Run library scan so Plex knows files are gone
-3. **Sync Overseerr** - Force Overseerr to resync with Plex
-4. **Create backup** - Run `python backup_scheduler.py --backup-now` to detect missing
-5. **Review missing** - Check "Review Missing" tab to see what will be restored
-6. **Start restore** - Click "Restore to Overseerr"
-7. **Wait for downloads** - Overseerr will re-download everything
+Overseerr must update its cache to know files are missing:
+
+1. Go to Overseerr → Settings → Integrations → Plex
+2. Click "Test Connection" or "Resync"
+3. Wait for full sync to complete (must be fully synced)
+4. Proceed to Step 3
+
+### Step 3: Create Backup and Restore
+
+Now the tool can detect missing files:
+
+1. Create new backup: `python backup_scheduler.py --backup-now`
+2. Open web UI → "Review Missing" tab
+3. Select backup file
+4. Click "Review Missing Files" (shows what will be restored)
+5. If correct, go to "Restore" tab
+6. Select backup file and click "Batch" to start restore
+7. Overseerr will request missing content
+8. Monitor Overseerr for download progress
+
+### Why This Order Matters
+
+- **Plex must scan first** - If Plex doesn't know files are missing, backup won't detect them
+- **Overseerr must resync second** - If Overseerr's cache is stale, it will ignore restore requests  
+- **Then backup and restore** - Only after both are updated can recovery work correctly
+
+## Important Limitations
+
+### Overseerr Ignores Restore Requests
+
+**Problem:** Overseerr has stale cache and thinks files still exist
+- Files were lost from storage (disaster)
+- But Overseerr hasn't resynced with Plex yet
+- Overseerr still believes files are there
+- Overseerr ignores restore requests for "existing" files
+
+**Solution:** Follow Step 2 above - Force Overseerr to resync before restore
+
+### Restore Doesn't Detect Missing Files
+
+**Problem:** Plex hasn't scanned and still thinks files exist
+- Files were lost from storage (disaster)
+- But Plex hasn't run library scan
+- Plex library shows files as still present
+- Restore won't see them as missing
+
+**Solution:** Follow Step 1 above - Run Plex library scan first
 
 ## Features
 
@@ -171,40 +209,17 @@ python plex_overseerr_backup.py \
 
 ### After Data Loss
 
-1. Open web UI → "Restore" tab
-2. Select your backup JSON file
-3. Choose batch size (smaller = safer)
-4. Click "Batch" to start
-5. Watch Overseerr for new requests
-6. Approve requests and let them download
-7. Click "Batch" again to continue with more files
-
-### Before You Restore - Critical Steps
-
-**IMPORTANT:** Follow these steps before starting recovery to ensure it works:
-
-1. **Update Plex Library (MUST DO FIRST)**
-   - Delete files from your storage first
-   - Open Plex → Library → Settings
-   - Click "Optimize Library" or run a library scan
-   - Wait for Plex to scan and update
-   - Plex must recognize files are missing before backup can detect them
-
-2. **Sync Overseerr (MUST DO SECOND)**
-   - Open Overseerr → Settings → Integrations → Plex
-   - Click "Test Connection" or "Resync"
-   - Wait for Overseerr to resync with Plex
-   - Overseerr cache must be updated or it will ignore restore requests
-
-3. **Then Create Backup and Restore**
-   - Now run backup to detect missing files
-   - Review what's missing in "Review Missing" tab
-   - Proceed with restore
-
-**Why this matters:**
-- If Plex hasn't scanned, it doesn't know files are missing → backup won't detect them
-- If Overseerr hasn't synced, it thinks files still exist → it ignores restore requests
-- This workflow ensures detection and recovery actually work
+1. Files have been lost from storage (disaster occurred)
+2. Follow the "Disaster Recovery" steps above (Plex scan, Overseerr sync)
+3. Create new backup to detect what's missing
+4. Review missing files
+5. Open web UI → "Restore" tab
+6. Select your backup JSON file
+7. Choose batch size (smaller = safer)
+8. Click "Batch" to start
+9. Watch Overseerr for new requests
+10. Approve requests and let them download
+11. Click "Batch" again to continue with more files
 
 ## Troubleshooting Restore Issues
 
