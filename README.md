@@ -62,19 +62,20 @@ Use the backup file you created BEFORE the disaster:
 
 ## Important Limitations
 
-### Review Missing Uses Backup Metadata Only
+### Review Missing Now Dynamically Checks Files
 
-**Review Missing does NOT dynamically check files** - it only reads from the JSON backup file:
+**Review Missing reads backup file AND checks filesystem:**
 
-- Shows files marked as missing **at the time the backup was created**
-- If backup was created with "Verify files" checked, it has accurate file status from that moment
-- If backup was created without verification, file_exists status is estimated
-- **Does NOT recheck the filesystem** when you click "Review Missing"
+**For Movies:**
+- Dynamically checks if file exists on disk **right now**
+- Shows file size if it exists
+- Shows "File not found on disk" if missing
+- Reports missing if file was deleted after backup
 
-**This means:**
-- If files were deleted AFTER the backup, Review Missing won't show them
-- If files were recovered AFTER the backup, Review Missing will still show them as missing
-- Use the backup created just before the disaster for most accurate results
+**For TV Shows:**
+- Cannot verify individual episode files
+- Reports TV show type in output
+- You must manually determine if episodes are missing
 
 ### Overseerr Ignores Restore Requests
 

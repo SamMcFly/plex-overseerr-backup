@@ -144,7 +144,7 @@ def backup():
 
 @app.route('/api/review-missing', methods=['POST'])
 def review_missing():
-    """Review missing files from backup"""
+    """Review missing files from backup with dynamic checking"""
     try:
         data = request.json
         backup_file_path = data['backup_file']
@@ -175,15 +175,52 @@ def review_missing():
         
         for lib_name, items in backup_data['libraries'].items():
             for item in items:
-                if not item.get('file_exists', False):
-                    missing_items.append({
-                        'library': lib_name,
-                        'title': item.get('title', 'Unknown'),
-                        'type': item.get('type', 'unknown'),
-                        'year': item.get('year'),
-                        'file_path': item.get('file_path', 'N/A'),
-                        'status': item.get('file_status', 'Unknown')
-                    })
+                # Check if file actually exists on disk (for movies)
+                file_exists_now = False
+                file_path = item.get('file_path', '')
+                reason = "Unknown"
+                item_type = item.get('type', 'unknown')
+                
+                if file_path:
+                    path = Path(file_path)
+                    try:
+                        if path.exists():
+                            file_exists_now = True
+                            # Get file size
+                            size_mb = path.stat().st_size / (1024 * 1024)
+                            reason = f"OK ({size_mb:.1f} MB)"
+                        else:
+                            reason = "File not found on disk"
+                    except Exception as e:
+                        reason = f"Cannot access: {str(e)}"
+                else:
+                    reason = "No file path in backup"
+                
+                # For TV shows, we can't verify individual episode files
+                # Report as missing if file_path is empty (no episode info)
+                if item_type == 'show':
+                    if not file_path:
+                        missing_items.append({
+                            'library': lib_name,
+                            'title': item.get('title', 'Unknown'),
+                            'type': item_type,
+                            'year': item.get('year'),
+                            'file_path': file_path or 'Episodes not tracked',
+                            'status': 'TV Show - cannot verify episodes',
+                            'checked': False
+                        })
+                else:
+                    # For movies and other types, only report as missing if file doesn't exist
+                    if not file_exists_now:
+                        missing_items.append({
+                            'library': lib_name,
+                            'title': item.get('title', 'Unknown'),
+                            'type': item_type,
+                            'year': item.get('year'),
+                            'file_path': file_path,
+                            'status': reason,
+                            'checked': True  # File was dynamically checked
+                        })
         
         # Group by library
         by_library = {}
@@ -195,7 +232,8 @@ def review_missing():
         
         # Build output
         output = f"MISSING FILES - {len(missing_items)} items\n"
-        output += "="*80 + "\n\n"
+        output += "="*80 + "\n"
+        output += "(Files dynamically verified on disk)\n\n"
         
         for lib_name in sorted(by_library.keys()):
             items = by_library[lib_name]
@@ -206,8 +244,13 @@ def review_missing():
                 year_str = f" ({item['year']})" if item['year'] else ""
                 output += f"  • {item['title']}{year_str}\n"
                 output += f"    Type: {item['type']}\n"
-                output += f"    Expected: {item['file_path']}\n"
-                output += f"    Status: {item['status']}\n\n"
+                
+                if item['checked']:
+                    output += f"    Path: {item['file_path']}\n"
+                    output += f"    Status: {item['status']}\n"
+                else:
+                    output += f"    Status: {item['status']}\n"
+                output += "\n"
         
         output += "\n" + "="*80 + "\n"
         output += "SUMMARY\n"
@@ -215,6 +258,7 @@ def review_missing():
         for lib_name in sorted(by_library.keys()):
             output += f"  {lib_name}: {len(by_library[lib_name])} missing\n"
         output += f"\nTotal missing: {len(missing_items)}\n"
+        output += "\n(Note: TV shows cannot have individual episodes verified)\n"
         
         return jsonify({'success': True, 'output': output, 'total': len(missing_items)})
     except Exception as e:
