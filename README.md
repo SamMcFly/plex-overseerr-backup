@@ -31,7 +31,7 @@ If you lose a hard drive or multiple drives in your NAS, you don't want to back 
 ### 1. Clone or Download
 
 ```bash
-git clone https://github.com/yourusername/plex-overseerr-backup.git
+git clone https://github.com/SamMcFly/plex-overseerr-backup.git
 cd plex-overseerr-backup
 ```
 

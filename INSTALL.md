@@ -12,7 +12,7 @@ python --version
 ### 2. Clone This Repository
 
 ```bash
-git clone https://github.com/yourusername/plex-overseerr-backup.git
+git clone https://github.com/SamMcFly/plex-overseerr-backup.git
 cd plex-overseerr-backup
 ```
 
