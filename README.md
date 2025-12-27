@@ -4,7 +4,7 @@ A disaster recovery tool for Plex media libraries that backs up metadata and all
 
 ## Normal Operation: Regular Backups
 
-Just run backups on a schedule (daily, weekly, monthly - your choice):
+Schedule regular backups (daily, weekly, monthly - your choice):
 
 ```bash
 # Daily backup at 2 AM
@@ -16,9 +16,11 @@ python backup_scheduler.py --backup-now
 
 Store backups in a safe location (external drive, cloud storage, different NAS, etc).
 
+**This backup will be used later if disaster strikes.**
+
 ## Disaster Recovery: After Files Are Lost
 
-**Only follow these steps AFTER files have been lost from your storage.**
+**Use your pre-disaster backup with these steps:**
 
 ### Step 1: Update Plex Library
 
@@ -39,24 +41,24 @@ Overseerr must update its cache to know files are missing:
 3. Wait for full sync to complete (must be fully synced)
 4. Proceed to Step 3
 
-### Step 3: Create Backup and Restore
+### Step 3: Restore Using Your Pre-Disaster Backup
 
-Now the tool can detect missing files:
+Use the backup file you created BEFORE the disaster:
 
-1. Create new backup: `python backup_scheduler.py --backup-now`
-2. Open web UI → "Review Missing" tab
-3. Select backup file
-4. Click "Review Missing Files" (shows what will be restored)
-5. If correct, go to "Restore" tab
-6. Select backup file and click "Batch" to start restore
-7. Overseerr will request missing content
-8. Monitor Overseerr for download progress
+1. Open web UI → "Restore" tab
+2. Select your **pre-disaster backup file**
+3. Go to "Review Missing" tab to see what will be restored
+4. Verify the list is correct
+5. Click "Batch" to start restore
+6. Overseerr will request missing content
+7. Approve requests and monitor Overseerr for downloads
+8. Click "Batch" again to continue with more files
 
 ### Why This Order Matters
 
-- **Plex must scan first** - If Plex doesn't know files are missing, backup won't detect them
-- **Overseerr must resync second** - If Overseerr's cache is stale, it will ignore restore requests  
-- **Then backup and restore** - Only after both are updated can recovery work correctly
+- **Plex must scan first** - So it knows which files are missing
+- **Overseerr must resync second** - So it will accept restore requests  
+- **Use pre-disaster backup** - Contains all files that existed before loss occurred
 
 ## Important Limitations
 
