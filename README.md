@@ -2,11 +2,45 @@
 
 A disaster recovery tool for Plex media libraries that backs up metadata and allows recovery through Overseerr.
 
-## Why This Exists
+## Important Limitations
 
-If you lose a hard drive or multiple drives in your NAS, you don't want to back up all 30TB of media files. This tool backs up only the **metadata** (titles, years, ratings, paths) to a JSON file, then uses that to automatically submit recovery requests to Overseerr, which downloads the content again.
+### Overseerr Library Sync
 
-**Use case:** You lose a drive → run restore → Overseerr re-downloads everything automatically.
+**If Overseerr thinks you already have the files**, it will ignore restore requests. This happens when:
+- Files were deleted from your storage
+- But Overseerr has not synced with Plex yet
+- Overseerr still sees the files in its cache
+
+**Solution:** Force Overseerr to resync before restore:
+1. Go to Overseerr Settings → Integrations → Plex
+2. Click "Test Connection" or "Resync"
+3. Wait for sync to complete
+4. Then run the restore process
+
+### Plex Library Not Updated
+
+**If files are missing but Plex hasn't scanned yet**, the backup will not know they're missing:
+- You delete files from disk
+- But haven't run "Optimize Library" or library scan
+- Backup still thinks files are there
+- Restore won't process them as missing
+
+**Solution:** Update Plex library before backup:
+1. Delete or lose files from your storage
+2. Go to Plex → Library → Settings
+3. Run "Optimize Library" or full library scan
+4. Wait for scan to complete
+5. Then run backup
+
+### Recommended Recovery Workflow
+
+1. **Discover data loss** (files are missing from storage)
+2. **Update Plex** - Run library scan so Plex knows files are gone
+3. **Sync Overseerr** - Force Overseerr to resync with Plex
+4. **Create backup** - Run `python backup_scheduler.py --backup-now` to detect missing
+5. **Review missing** - Check "Review Missing" tab to see what will be restored
+6. **Start restore** - Click "Restore to Overseerr"
+7. **Wait for downloads** - Overseerr will re-download everything
 
 ## Features
 
@@ -145,7 +179,58 @@ python plex_overseerr_backup.py \
 6. Approve requests and let them download
 7. Click "Batch" again to continue with more files
 
-## Backup Format
+### Before You Restore - Critical Steps
+
+**IMPORTANT:** Follow these steps before starting recovery to ensure it works:
+
+1. **Update Plex Library (MUST DO FIRST)**
+   - Delete files from your storage first
+   - Open Plex → Library → Settings
+   - Click "Optimize Library" or run a library scan
+   - Wait for Plex to scan and update
+   - Plex must recognize files are missing before backup can detect them
+
+2. **Sync Overseerr (MUST DO SECOND)**
+   - Open Overseerr → Settings → Integrations → Plex
+   - Click "Test Connection" or "Resync"
+   - Wait for Overseerr to resync with Plex
+   - Overseerr cache must be updated or it will ignore restore requests
+
+3. **Then Create Backup and Restore**
+   - Now run backup to detect missing files
+   - Review what's missing in "Review Missing" tab
+   - Proceed with restore
+
+**Why this matters:**
+- If Plex hasn't scanned, it doesn't know files are missing → backup won't detect them
+- If Overseerr hasn't synced, it thinks files still exist → it ignores restore requests
+- This workflow ensures detection and recovery actually work
+
+## Troubleshooting Restore Issues
+
+### "No missing files detected"
+**Cause:** Plex library hasn't been updated yet
+**Solution:** 
+1. Go to Plex → Library → Settings
+2. Run "Optimize Library" or scan
+3. Wait for scan to complete
+4. Create a new backup
+5. Check "Review Missing" again
+
+### "Overseerr ignores restore requests"
+**Cause:** Overseerr cache doesn't know files are gone
+**Solution:**
+1. Open Overseerr → Settings → Integrations → Plex
+2. Click "Test Connection" or "Resync" 
+3. Wait for full sync to complete
+4. Try restore again
+
+### "Shows/movies appear in backup but not requested"
+**Cause:** File still exists on disk even though you thought it was deleted
+**Solution:**
+1. Check file system to confirm file is actually deleted
+2. Verify file path in backup JSON
+3. Double-check Plex has scanned and shows file as missing
 
 Backups are JSON files containing:
 - Library names

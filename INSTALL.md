@@ -123,6 +123,30 @@ python ui.py
 - Test restore process before you need it
 - Keep backups in safe location
 
+## Important: Recovery Best Practices
+
+**Before recovering from data loss**, follow this order:
+
+1. **Update Plex Library** (Critical!)
+   - Files must be deleted from disk
+   - Go to Library → Settings → "Optimize Library" or scan
+   - Wait for Plex to update and recognize missing files
+
+2. **Sync Overseerr** (Critical!)
+   - Go to Settings → Integrations → Plex
+   - Click "Test Connection" or resync
+   - Wait for Overseerr to update its cache
+
+3. **Then run restore**
+   - Create new backup
+   - Review missing files
+   - Start restore process
+
+**Why this matters:**
+- If Plex doesn't know files are missing, backup won't detect them
+- If Overseerr's cache is stale, it will ignore restore requests
+- Following this order ensures recovery works correctly
+
 ## Support
 
 Need help?
