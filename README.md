@@ -62,6 +62,20 @@ Use the backup file you created BEFORE the disaster:
 
 ## Important Limitations
 
+### Review Missing Uses Backup Metadata Only
+
+**Review Missing does NOT dynamically check files** - it only reads from the JSON backup file:
+
+- Shows files marked as missing **at the time the backup was created**
+- If backup was created with "Verify files" checked, it has accurate file status from that moment
+- If backup was created without verification, file_exists status is estimated
+- **Does NOT recheck the filesystem** when you click "Review Missing"
+
+**This means:**
+- If files were deleted AFTER the backup, Review Missing won't show them
+- If files were recovered AFTER the backup, Review Missing will still show them as missing
+- Use the backup created just before the disaster for most accurate results
+
 ### Overseerr Ignores Restore Requests
 
 **Problem:** Overseerr has stale cache and thinks files still exist
@@ -72,7 +86,7 @@ Use the backup file you created BEFORE the disaster:
 
 **Solution:** Follow Step 2 above - Force Overseerr to resync before restore
 
-### Restore Doesn't Detect Missing Files
+### Plex Library Not Updated
 
 **Problem:** Plex hasn't scanned and still thinks files exist
 - Files were lost from storage (disaster)
