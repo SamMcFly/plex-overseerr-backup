@@ -25,10 +25,9 @@ pip install -r requirements.txt
 ### 4. Get Your API Tokens
 
 **Plex Token:**
-- Open Plex Web → Settings → Account
-- Scroll to "Authorized Devices"
-- Click "Show Token"
-- Copy the token
+- Visit: `http://YOUR-PLEX-IP:32400/identity`
+- Look for the token in the XML
+- Copy the token value
 - Official guide: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
 
 **Overseerr Token:**
