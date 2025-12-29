@@ -67,9 +67,9 @@ Use the backup file you created BEFORE the disaster:
 **Automatic Solution (Recommended):**
 Configure Radarr and Sonarr URLs/API tokens in the Settings tab. When you enable Force Mode during restore, the tool will automatically:
 1. Clear entries from Overseerr
-2. Clear movie entries from Radarr  
-3. Clear series entries from Sonarr
-4. Submit fresh requests
+2. Trigger searches in Radarr for missing movies
+3. Trigger searches in Sonarr for missing episodes
+4. Submit fresh requests to Overseerr
 
 **Manual Solution:**
 If you prefer not to configure Radarr/Sonarr integration:
@@ -328,8 +328,8 @@ python plex_overseerr_backup.py \
 
 **What it does:**
 1. Looks up each item in Overseerr's database - clears if found
-2. Looks up movies in Radarr - clears if found (when configured)
-3. Looks up TV shows in Sonarr - clears if found (when configured)
+2. Looks up movies in Radarr - triggers search for missing files (when configured)
+3. Looks up TV shows in Sonarr - triggers search for missing episodes (when configured)
 4. Submits fresh request to Overseerr
 
 **When to use:**
@@ -338,7 +338,7 @@ python plex_overseerr_backup.py \
 - You've already requested something before but files were deleted
 - Overseerr shows "Already Requested" for content you need
 
-**Note:** This clears entries from all configured services. Files are NOT deleted (deleteFiles=false). For disaster recovery, this is usually exactly what you want - fresh entries that will trigger new downloads.
+**Note:** For Radarr/Sonarr, Force Mode triggers searches for missing content rather than deleting entries. This preserves your library history while still initiating downloads. Files are never deleted (deleteFiles=false). For disaster recovery, this is usually exactly what you want.
 
 ### Review Missing Now Dynamically Checks Files
 
@@ -475,7 +475,7 @@ Example (detailed episode mode):
 ## Troubleshooting
 
 ### "Cannot read properties of undefined (reading 'filter')"
-This error from Overseerr means the seasons parameter is wrong. Make sure you're using version 2.7+.
+This error from Overseerr means the seasons parameter is wrong. Make sure you're using version 3.0+.
 
 ### Requests not appearing in Overseerr
 - Check that the API key is valid
