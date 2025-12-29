@@ -9,6 +9,8 @@ Automate your Plex backups with scheduled execution and automatic cleanup of old
 - ⏰ **Retention Policy** - Keep backups for N days (default: 30)
 - 📋 **Backup Listing** - See all your backups
 - 🎯 **One-Time Backups** - Run manually anytime
+- 🗜️ **Automatic Compression** - Gzip compression enabled by default
+- 📺 **Detailed Episode Tracking** - Optional per-episode file verification
 - 📝 **Logging** - Track all backup activities
 - ⚙️ **Config Integration** - Uses your existing config.json
 
@@ -21,6 +23,58 @@ pip install -r requirements.txt
 ```
 
 The `schedule` library is required for scheduled backups.
+
+## Quick Start
+
+### One-Time Backup (Right Now)
+
+```bash
+python backup_scheduler.py --backup-now
+```
+
+### One-Time Backup + Cleanup Old Files
+
+```bash
+python backup_scheduler.py --backup-now --cleanup 30
+```
+
+Keeps backups from last 30 days, removes anything older.
+
+### Backup with Detailed Episode Tracking
+
+```bash
+python backup_scheduler.py --backup-now --detailed-episodes
+```
+
+Tracks individual TV episode files (slower but more precise restore).
+
+### Backup Without Compression
+
+```bash
+python backup_scheduler.py --backup-now --no-compress
+```
+
+Creates `.json` instead of `.json.gz` file.
+
+### List All Backups
+
+```bash
+python backup_scheduler.py --list
+```
+
+Shows:
+- Backup filenames (indicates if compressed)
+- Modification dates
+- File sizes
+- Total count and combined size
+
+### Manual Cleanup
+
+```bash
+python backup_scheduler.py --cleanup 60
+```
+
+Removes backups older than 60 days (without running a new backup).
 
 ## Choose Your Scheduling Method
 
@@ -61,42 +115,6 @@ python backup_scheduler.py --daily 02:00
 
 Runs continuously and handles scheduling automatically.
 
----
-
-### One-Time Backup (Right Now)
-
-```bash
-python backup_scheduler.py --backup-now
-```
-
-### One-Time Backup + Cleanup Old Files
-
-```bash
-python backup_scheduler.py --backup-now --cleanup 30
-```
-
-Keeps backups from last 30 days, removes anything older.
-
-### List All Backups
-
-```bash
-python backup_scheduler.py --list
-```
-
-Shows:
-- Backup filenames
-- Modification dates
-- File sizes
-- Total count
-
-### Manual Cleanup
-
-```bash
-python backup_scheduler.py --cleanup 60
-```
-
-Removes backups older than 60 days (without running a new backup).
-
 ## Scheduling Backups
 
 ### Daily Backup at Specific Time
@@ -110,6 +128,9 @@ python backup_scheduler.py --daily 23:00
 
 # Backup every day at 3:30 AM with no file verification (faster)
 python backup_scheduler.py --daily 03:30 --no-verify
+
+# Backup every day with detailed episode tracking
+python backup_scheduler.py --daily 02:00 --detailed-episodes
 ```
 
 The script runs continuously and executes the backup at the specified time each day.
@@ -145,17 +166,75 @@ python backup_scheduler.py --daily 02:00 --retention 90
 
 ```
 --config CONFIG          Config file (default: config.json)
---backup-dir DIR        Backup directory (default: backups)
---backup-now            Run backup immediately
---no-verify             Skip file verification (faster)
---list                  List all backups
---cleanup DAYS          Remove backups older than DAYS
---daily HH:MM           Schedule daily backup at HH:MM (using Python scheduler)
---weekly DAY HH:MM      Schedule weekly backup (using Python scheduler)
---crontab HH:MM         Generate crontab line for Linux/Mac
---windows-task HH:MM    Generate Windows Task Scheduler command
---verify                Verify files during backup (default)
---retention DAYS        Keep backups for DAYS (default: 30)
+--backup-dir DIR         Backup directory (default: backups)
+--backup-now             Run backup immediately
+--no-verify              Skip file verification (faster)
+--no-compress            Skip gzip compression of backup
+--detailed-episodes      Track individual episode files for TV shows (slower)
+--list                   List all backups
+--cleanup DAYS           Remove backups older than DAYS
+--daily HH:MM            Schedule daily backup at HH:MM (using Python scheduler)
+--weekly DAY HH:MM       Schedule weekly backup (using Python scheduler)
+--crontab HH:MM          Generate crontab line for Linux/Mac
+--windows-task HH:MM     Generate Windows Task Scheduler command
+--verify                 Verify files during backup (default)
+--retention DAYS         Keep backups for DAYS (default: 30)
+```
+
+## Backup Modes
+
+### Standard Mode (Default)
+
+Fast backup that stores episode counts:
+
+```bash
+python backup_scheduler.py --backup-now
+```
+
+- 1 API call per library
+- Stores total episode count for TV shows
+- On restore, requests all seasons if episodes missing
+
+### Detailed Episode Mode
+
+Slower backup that tracks individual episodes:
+
+```bash
+python backup_scheduler.py --backup-now --detailed-episodes
+```
+
+- 3 API calls per TV show (show → seasons → episodes)
+- Stores individual episode file paths
+- On restore, requests only specific missing seasons
+- Review shows exactly which episodes missing (S02E05, S03E10, etc.)
+
+**Recommendation:** Use detailed mode for weekly/monthly backups, standard mode for daily backups.
+
+## Compression
+
+Backups are automatically compressed with gzip, typically reducing size by 80-90%.
+
+```bash
+# With compression (default) - creates .json.gz
+python backup_scheduler.py --backup-now
+
+# Without compression - creates .json
+python backup_scheduler.py --backup-now --no-compress
+```
+
+The `--list` command shows both compressed and uncompressed files:
+```
+Backup History:
+--------------------------------------------------------------------------------
+  plex_library_20250115_020015.json.gz (compressed)
+    Modified: 2025-01-15 02:05:45
+    Size: 125.3 KB
+  plex_library_20250114_020012.json.gz (compressed)
+    Modified: 2025-01-14 02:04:30
+    Size: 124.8 KB
+--------------------------------------------------------------------------------
+Total backups: 2
+Total size: 250.1 KB (0.24 MB)
 ```
 
 ## Examples
@@ -178,6 +257,14 @@ Backup every Sunday at 2 AM, keep 90 days of backups:
 python backup_scheduler.py --weekly sunday 02:00 --retention 90
 ```
 
+### Weekly Detailed Backup
+
+Track individual episodes once a week:
+
+```bash
+python backup_scheduler.py --weekly sunday 02:00 --detailed-episodes --retention 90
+```
+
 ### Fast Daily Backup
 
 Skip file verification for speed, backup at midnight, keep 14 days:
@@ -186,23 +273,23 @@ Skip file verification for speed, backup at midnight, keep 14 days:
 python backup_scheduler.py --daily 00:00 --no-verify --retention 14
 ```
 
-### Multiple Backups (Weekly + Monthly)
+### Multiple Backups (Daily Standard + Weekly Detailed)
 
 Run two instances in separate terminals:
 
-Terminal 1 - Weekly backup (Sundays):
-```bash
-python backup_scheduler.py --weekly sunday 02:00 --retention 90
-```
-
-Terminal 2 - Daily backup (keeps last 7 days):
+Terminal 1 - Daily standard backup (fast, keeps last 7 days):
 ```bash
 python backup_scheduler.py --daily 03:00 --retention 7
 ```
 
-This way you have:
-- Daily backups from the last week
-- Plus a full backup from the last 3 months
+Terminal 2 - Weekly detailed backup (thorough, keeps 90 days):
+```bash
+python backup_scheduler.py --weekly sunday 02:00 --detailed-episodes --retention 90
+```
+
+This gives you:
+- Quick daily backups for recent recovery
+- Detailed weekly backups for precise episode-level recovery
 
 ## Using with System Scheduler
 
@@ -247,8 +334,8 @@ If you prefer manual setup:
 # Daily backup at 2 AM
 0 2 * * * cd /path/to/plex-overseerr-backup && python backup_scheduler.py --backup-now --cleanup 30
 
-# Weekly backup every Sunday at 2 AM
-0 2 * * 0 cd /path/to/plex-overseerr-backup && python backup_scheduler.py --backup-now --cleanup 90
+# Weekly detailed backup every Sunday at 2 AM
+0 2 * * 0 cd /path/to/plex-overseerr-backup && python backup_scheduler.py --backup-now --detailed-episodes --cleanup 90
 ```
 
 Add to crontab:
@@ -306,9 +393,10 @@ All backup activities are logged to `plex_backup_scheduler.log`:
 2025-12-27 02:00:15 - INFO - ============================================================
 2025-12-27 02:00:15 - INFO - Starting backup: plex_library_20251227_020015.json
 2025-12-27 02:00:15 - INFO - ============================================================
-2025-12-27 02:05:45 - INFO - Backup successful: plex_library_20251227_020015.json
-2025-12-27 02:05:45 - INFO - File size: 1234.5 KB
-2025-12-27 02:05:45 - INFO - Cleanup complete: Removed 2 backups (567.3 KB)
+2025-12-27 02:05:45 - INFO - ✓ Backup successful: plex_library_20251227_020015.json
+2025-12-27 02:05:45 - INFO -   File size: 1234.5 KB
+2025-12-27 02:05:46 - INFO -   Compressed: 1234.5 KB → 125.3 KB (89.8% reduction)
+2025-12-27 02:05:46 - INFO - Cleanup complete: Removed 2 backups (567.3 KB)
 ```
 
 View logs:
@@ -335,11 +423,25 @@ If using `--daily` or `--weekly`, the script runs continuously. Keep it running 
 
 ### Backups taking too long
 
-Use `--no-verify` to skip file verification:
+Options to speed up backups:
 
 ```bash
+# Skip file verification
 python backup_scheduler.py --daily 02:00 --no-verify
+
+# Don't use detailed episode tracking for daily backups
+# (save detailed mode for weekly backups)
+python backup_scheduler.py --daily 02:00
 ```
+
+### Detailed episode backup is very slow
+
+This is expected - detailed mode makes 3 API calls per TV show. For a library with 100 shows, that's 300+ API calls.
+
+**Recommendations:**
+- Use standard mode for daily backups
+- Use detailed mode only for weekly/monthly backups
+- Or backup specific libraries: use the web UI to select only TV libraries for detailed backup
 
 ## Best Practices
 
@@ -349,6 +451,8 @@ python backup_scheduler.py --daily 02:00 --no-verify
 4. **Keep enough backups** - At least 7-30 days recommended
 5. **Use system scheduler** - More reliable than running Python continuously
 6. **Backup to safe location** - Consider network storage
+7. **Mix backup modes** - Daily standard + weekly detailed gives best coverage
+8. **Keep compression enabled** - 80-90% size reduction with no downside
 
 ## Advanced: Backup to Remote Storage
 

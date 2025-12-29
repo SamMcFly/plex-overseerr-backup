@@ -49,18 +49,21 @@ Open browser to: **http://localhost:5000**
 4. Click "Save Settings" to save your configuration
 5. Click "Test Connection" to verify everything works
 
+**Note:** API tokens are stored in plain text in `config.json`. Keep this file secure.
+
 ### 7. Create Your First Backup
 
 1. Click "Backup" tab
-2. Click "Create Backup"
-3. Wait for "Backup complete" message
-4. Backup saved to `backups/` folder
+2. (Optional) Check "Detailed episode tracking" for per-episode tracking
+3. Click "Create Backup"
+4. Wait for "Backup complete" message
+5. Backup saved to `backups/` folder (compressed `.json.gz` by default)
 
 ### 8. Test Restore (Optional)
 
 To test without losing data:
 1. Click "Review Missing" tab
-2. Select your backup file
+2. Select your backup file (`.json` or `.json.gz`)
 3. Click "Review Missing Files"
 4. You should see "Found 0 missing files" (since nothing is missing)
 
@@ -77,8 +80,16 @@ python ui.py
 python plex_overseerr_backup.py \
   --plex-url http://localhost:32400 \
   --plex-token YOUR_TOKEN \
+  --export backups/backup.json
+```
+
+**Command line backup with detailed episodes:**
+```bash
+python plex_overseerr_backup.py \
+  --plex-url http://localhost:32400 \
+  --plex-token YOUR_TOKEN \
   --export backups/backup.json \
-  --verify
+  --detailed-episodes
 ```
 
 **Command line restore (batch):**
@@ -92,11 +103,25 @@ python plex_overseerr_backup.py \
   --batch-limit 10
 ```
 
+**Scheduled backup:**
+```bash
+# Daily at 2 AM
+python backup_scheduler.py --daily 02:00
+
+# One-time now
+python backup_scheduler.py --backup-now
+```
+
 ## Troubleshooting
 
 ### "Module not found: requests"
 ```bash
 pip install requests
+```
+
+### "Module not found: flask"
+```bash
+pip install flask
 ```
 
 ### "Cannot connect to Plex"
@@ -116,12 +141,35 @@ python ui.py
 # Then visit http://localhost:5000
 ```
 
+### Backup file is .json.gz - is that right?
+Yes! Backups are automatically compressed with gzip to save space (80-90% smaller). Both `.json` and `.json.gz` files work for restore and review.
+
+## New Features
+
+### Detailed Episode Tracking
+Track individual TV episode files for precise restore:
+```bash
+python backup_scheduler.py --backup-now --detailed-episodes
+```
+
+Or check the "Detailed episode tracking" box in the web UI.
+
+### Automatic Compression
+Backups are gzip compressed by default. To disable:
+```bash
+python backup_scheduler.py --backup-now --no-compress
+```
+
+### Integrity Verification
+Backups include SHA256 checksums. If a backup is corrupted, you'll see a warning during restore.
+
 ## Next Steps
 
 - Read full README.md for detailed documentation
 - Schedule regular backups (weekly/monthly)
 - **Store backups in safe location** (this is your insurance!)
 - Test restore process with a small backup first
+- Consider using detailed episode mode for weekly backups
 
 ## After Disaster: Recovery Process
 
@@ -139,7 +187,7 @@ python ui.py
 
 3. **Restore Using Pre-Disaster Backup**
    - Open web UI → "Restore" tab
-   - Select your **backup file from before the disaster**
+   - Select your **backup file from before the disaster** (`.json` or `.json.gz`)
    - Review what will be restored
    - Click "Batch" to start restore
    - Monitor Overseerr for downloads

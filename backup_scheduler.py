@@ -93,7 +93,7 @@ class BackupScheduler:
             logger.error(f"Compression failed: {e}")
             return backup_file  # Return original if compression fails
     
-    def run_backup(self, verify_files=True, libraries=None, compress=True):
+    def run_backup(self, verify_files=True, libraries=None, compress=True, detailed_episodes=False):
         """Execute backup using plex_overseerr_backup.py"""
         try:
             # Generate unique filename with timestamp
@@ -102,6 +102,8 @@ class BackupScheduler:
             
             logger.info("="*60)
             logger.info(f"Starting backup: {backup_file.name}")
+            if detailed_episodes:
+                logger.info("Detailed episode tracking enabled")
             logger.info("="*60)
             
             # Build command
@@ -114,6 +116,9 @@ class BackupScheduler:
             
             if not verify_files:
                 cmd.append('--no-verify')
+            
+            if detailed_episodes:
+                cmd.append('--detailed-episodes')
             
             if libraries:
                 cmd.extend(['--libraries'] + libraries)
@@ -208,12 +213,12 @@ class BackupScheduler:
         logger.info(f"Total backups: {len(backups)}")
         logger.info(f"Total size: {total_size / 1024:.1f} KB ({total_size / (1024*1024):.2f} MB)")
     
-    def schedule_daily(self, hour=2, minute=0, verify_files=True, cleanup_days=30, compress=True):
+    def schedule_daily(self, hour=2, minute=0, verify_files=True, cleanup_days=30, compress=True, detailed_episodes=False):
         """Schedule daily backup at specified time"""
         time_str = f"{hour:02d}:{minute:02d}"
         
         def backup_job():
-            self.run_backup(verify_files=verify_files, compress=compress)
+            self.run_backup(verify_files=verify_files, compress=compress, detailed_episodes=detailed_episodes)
             self.cleanup_old_backups(days_to_keep=cleanup_days)
         
         schedule.every().day.at(time_str).do(backup_job)
@@ -221,7 +226,7 @@ class BackupScheduler:
         
         return self._run_scheduler()
     
-    def schedule_weekly(self, day='sunday', hour=2, minute=0, verify_files=True, cleanup_days=30, compress=True):
+    def schedule_weekly(self, day='sunday', hour=2, minute=0, verify_files=True, cleanup_days=30, compress=True, detailed_episodes=False):
         """Schedule weekly backup on specified day"""
         day = day.lower()
         valid_days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -233,7 +238,7 @@ class BackupScheduler:
         time_str = f"{hour:02d}:{minute:02d}"
         
         def backup_job():
-            self.run_backup(verify_files=verify_files, compress=compress)
+            self.run_backup(verify_files=verify_files, compress=compress, detailed_episodes=detailed_episodes)
             self.cleanup_old_backups(days_to_keep=cleanup_days)
         
         day_method = getattr(schedule.every(), day)
@@ -398,6 +403,8 @@ Examples:
                        help='Skip file verification (faster)')
     parser.add_argument('--no-compress', action='store_true',
                        help='Skip gzip compression of backup')
+    parser.add_argument('--detailed-episodes', action='store_true',
+                       help='Track individual episode files for TV shows (slower)')
     parser.add_argument('--list', action='store_true',
                        help='List all backups')
     parser.add_argument('--cleanup', type=int, metavar='DAYS',
@@ -429,7 +436,8 @@ Examples:
     if args.backup_now:
         scheduler.run_backup(
             verify_files=not args.no_verify,
-            compress=not args.no_compress
+            compress=not args.no_compress,
+            detailed_episodes=args.detailed_episodes
         )
         if args.cleanup:
             scheduler.cleanup_old_backups(days_to_keep=args.cleanup)
@@ -471,6 +479,7 @@ Examples:
     # Handle scheduling
     verify = args.verify and not args.no_verify
     compress = not args.no_compress
+    detailed = args.detailed_episodes
     
     if args.daily:
         try:
@@ -480,7 +489,8 @@ Examples:
                 minute=minute,
                 verify_files=verify,
                 cleanup_days=args.retention,
-                compress=compress
+                compress=compress,
+                detailed_episodes=detailed
             )
         except ValueError:
             logger.error(f"Invalid time format: {args.daily}. Use HH:MM")
@@ -496,7 +506,8 @@ Examples:
                 minute=minute,
                 verify_files=verify,
                 cleanup_days=args.retention,
-                compress=compress
+                compress=compress,
+                detailed_episodes=detailed
             )
         except ValueError:
             logger.error(f"Invalid time format: {time_str}. Use HH:MM")

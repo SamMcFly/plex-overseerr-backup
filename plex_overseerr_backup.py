@@ -196,6 +196,128 @@ class PlexLibraryBackup:
             logger.error(f"Failed to get items from '{library_name}': {e}")
             return []
 
+    def get_show_seasons(self, show_rating_key: str) -> List[Dict]:
+        """Get all seasons for a TV show"""
+        try:
+            url = f'{self.plex_url}/library/metadata/{show_rating_key}/children'
+            response = request_with_retry(self.session, 'get', url, timeout=30)
+            
+            if response.status_code != 200:
+                logger.debug(f"  Failed to get seasons: HTTP {response.status_code}")
+                return []
+            
+            data = response.json().get('MediaContainer', {})
+            seasons = data.get('Metadata', [])
+            return seasons
+        except Exception as e:
+            logger.debug(f"  Error getting seasons: {e}")
+            return []
+
+    def get_season_episodes(self, season_rating_key: str) -> List[Dict]:
+        """Get all episodes for a season"""
+        try:
+            url = f'{self.plex_url}/library/metadata/{season_rating_key}/children'
+            response = request_with_retry(self.session, 'get', url, timeout=30)
+            
+            if response.status_code != 200:
+                logger.debug(f"  Failed to get episodes: HTTP {response.status_code}")
+                return []
+            
+            data = response.json().get('MediaContainer', {})
+            episodes = data.get('Metadata', [])
+            return episodes
+        except Exception as e:
+            logger.debug(f"  Error getting episodes: {e}")
+            return []
+
+    def get_episode_details(self, show_rating_key: str, verify_files: bool = True) -> Dict:
+        """
+        Get detailed episode information for a TV show
+        
+        Returns:
+            Dict with 'seasons' list containing season/episode details
+        """
+        seasons_data = []
+        total_episodes = 0
+        verified_episodes = 0
+        missing_episodes = 0
+        
+        seasons = self.get_show_seasons(show_rating_key)
+        
+        for season in seasons:
+            season_num = season.get('index', 0)
+            season_title = season.get('title', f'Season {season_num}')
+            season_key = season.get('ratingKey')
+            
+            # Skip "All episodes" or specials if index is 0
+            if season_num == 0:
+                season_title = "Specials"
+            
+            episodes = self.get_season_episodes(season_key)
+            episodes_data = []
+            
+            for ep in episodes:
+                ep_num = ep.get('index', 0)
+                ep_title = ep.get('title', f'Episode {ep_num}')
+                ep_key = ep.get('ratingKey')
+                
+                ep_data = {
+                    'episode_num': ep_num,
+                    'title': ep_title,
+                    'ratingKey': ep_key,
+                }
+                
+                # Get file path for episode
+                if verify_files:
+                    if 'Media' in ep and ep['Media']:
+                        media = ep['Media'][0]
+                        if 'Part' in media and media['Part']:
+                            file_path = media['Part'][0].get('file', '')
+                            ep_data['file_path'] = file_path
+                            
+                            if file_path:
+                                try:
+                                    path = Path(file_path)
+                                    if path.exists():
+                                        size_mb = path.stat().st_size / (1024 * 1024)
+                                        ep_data['file_exists'] = True
+                                        ep_data['file_size_mb'] = round(size_mb, 1)
+                                        verified_episodes += 1
+                                    else:
+                                        ep_data['file_exists'] = False
+                                        missing_episodes += 1
+                                except Exception as e:
+                                    ep_data['file_exists'] = False
+                                    ep_data['error'] = str(e)
+                                    missing_episodes += 1
+                            else:
+                                ep_data['file_exists'] = False
+                                missing_episodes += 1
+                        else:
+                            ep_data['file_exists'] = False
+                            missing_episodes += 1
+                    else:
+                        ep_data['file_exists'] = False
+                        missing_episodes += 1
+                
+                episodes_data.append(ep_data)
+                total_episodes += 1
+            
+            seasons_data.append({
+                'season_num': season_num,
+                'title': season_title,
+                'ratingKey': season_key,
+                'episode_count': len(episodes_data),
+                'episodes': episodes_data
+            })
+        
+        return {
+            'seasons': seasons_data,
+            'total_episodes': total_episodes,
+            'verified_episodes': verified_episodes,
+            'missing_episodes': missing_episodes
+        }
+
     def verify_file_exists(self, item: Dict) -> Tuple[bool, str, str]:
         """
         Verify that the file exists at the location Plex reports
@@ -238,9 +360,17 @@ class PlexLibraryBackup:
             return False, "", f"Error checking file: {e}"
 
     def export_library(self, library_names: List[str], output_file: str, 
-                      verify_files: bool = True, skip_libraries: List[str] = None) -> Dict:
+                      verify_files: bool = True, skip_libraries: List[str] = None,
+                      detailed_episodes: bool = False) -> Dict:
         """
         Export library to JSON backup file
+        
+        Args:
+            library_names: List of library names to export (empty = all)
+            output_file: Path to save backup JSON
+            verify_files: Check if files exist on disk
+            skip_libraries: Libraries to skip
+            detailed_episodes: If True, fetch individual episode details for TV shows (slower)
         """
         if skip_libraries is None:
             skip_libraries = []
@@ -251,7 +381,9 @@ class PlexLibraryBackup:
             'missing_files': 0,
             'errors': 0,
             'movies': 0,
-            'shows': 0
+            'shows': 0,
+            'episodes': 0,
+            'missing_episodes': 0
         }
         
         if not library_names:
@@ -303,29 +435,57 @@ class PlexLibraryBackup:
                     if item.get('type') == 'show':
                         item_data['seasons'] = item.get('childCount', 0)  # Number of seasons
                         item_data['episodes'] = item.get('leafCount', 0)  # Total episodes
+                        
+                        # Detailed episode backup if requested
+                        if detailed_episodes:
+                            logger.info(f"    Fetching episode details for: {item['title']}")
+                            episode_details = self.get_episode_details(
+                                item.get('ratingKey'),
+                                verify_files=verify_files
+                            )
+                            item_data['season_details'] = episode_details['seasons']
+                            item_data['detailed'] = True
+                            
+                            stats['episodes'] += episode_details['total_episodes']
+                            stats['verified_items'] += episode_details['verified_episodes']
+                            stats['missing_episodes'] += episode_details['missing_episodes']
+                            
+                            if episode_details['missing_episodes'] > 0:
+                                logger.info(f"      Missing {episode_details['missing_episodes']}/{episode_details['total_episodes']} episodes")
+                        else:
+                            # Standard mode - just mark TV shows as existing if they have episodes
+                            if verify_files:
+                                if item.get('leafCount', 0) > 0:
+                                    item_data['file_exists'] = True
+                                    item_data['file_status'] = f"OK ({item.get('leafCount', 0)} episodes)"
+                                    stats['verified_items'] += 1
+                                else:
+                                    item_data['file_exists'] = False
+                                    item_data['file_status'] = "No episodes found"
+                                    stats['missing_files'] += 1
                     
                     elif item.get('type') == 'movie':
                         item_data['duration'] = item.get('duration')
                         item_data['contentRating'] = item.get('contentRating')
-                    
-                    file_verified = True
-                    if verify_files:
-                        exists, file_path, reason = self.verify_file_exists(item)
-                        item_data['file_path'] = file_path
-                        item_data['file_exists'] = exists
-                        item_data['file_status'] = reason
                         
-                        if exists:
-                            stats['verified_items'] += 1
-                        else:
-                            stats['missing_files'] += 1
-                            file_verified = False
+                        file_verified = True
+                        if verify_files:
+                            exists, file_path, reason = self.verify_file_exists(item)
+                            item_data['file_path'] = file_path
+                            item_data['file_exists'] = exists
+                            item_data['file_status'] = reason
+                            
+                            if exists:
+                                stats['verified_items'] += 1
+                            else:
+                                stats['missing_files'] += 1
+                                file_verified = False
+                        
+                        status_icon = "[OK]" if file_verified else "✗"
+                        logger.debug(f"  {status_icon} {item_data['title']} ({item_data['type']})")
                     
                     library_backup.append(item_data)
                     stats['total_items'] += 1
-                    
-                    status_icon = "[OK]" if file_verified else "✗"
-                    logger.debug(f"  {status_icon} {item_data['title']} ({item_data['type']})")
                 
                 except Exception as e:
                     logger.error(f"  [FAIL] Error processing item: {e}")
@@ -338,13 +498,16 @@ class PlexLibraryBackup:
         backup_data = {
             'exported_at': datetime.now().isoformat(),
             'plex_url': self.plex_url,
-            'version': '1.1',
+            'version': '1.2',
+            'detailed_episodes': detailed_episodes,
             'stats': {
                 'total_items': stats['total_items'],
                 'movies': stats['movies'],
                 'shows': stats['shows'],
+                'episodes': stats['episodes'],
                 'verified': stats['verified_items'],
                 'missing': stats['missing_files'],
+                'missing_episodes': stats['missing_episodes'],
                 'errors': stats['errors']
             },
             'libraries': libraries_data
@@ -483,6 +646,7 @@ class PlexLibraryBackup:
                 # For TV shows: check if episodes are missing
                 if item['type'] == 'show':
                     backed_up_episodes = item.get('episodes', 0)
+                    missing_seasons = []
                     
                     if backed_up_episodes == 0:
                         # No episodes in backup, skip
@@ -490,29 +654,67 @@ class PlexLibraryBackup:
                         stats['already_exist'] += 1
                         continue
                     
-                    # Query Plex for current episode count
-                    current_episodes = 0
-                    try:
-                        url = f'{plex_url}/library/metadata/{item["ratingKey"]}'
-                        response = request_with_retry(plex_session, 'get', url, timeout=10)
-                        if response.status_code == 200:
-                            data = response.json()
-                            metadata = data.get('MediaContainer', {}).get('Metadata', [])
-                            if metadata:
-                                current_episodes = metadata[0].get('leafCount', 0)
-                    except Exception as e:
-                        logger.debug(f"  Error querying {item['title']}: {e}")
-                        current_episodes = backed_up_episodes  # Assume OK if can't query
+                    # Check if we have detailed episode data
+                    if item.get('detailed') and 'season_details' in item:
+                        # Detailed mode - check individual episodes
+                        logger.debug(f"  Checking detailed episode data for '{item['title']}'")
+                        
+                        for season in item['season_details']:
+                            season_num = season.get('season_num', 0)
+                            season_missing = False
+                            missing_ep_count = 0
+                            
+                            for ep in season.get('episodes', []):
+                                file_path = ep.get('file_path', '')
+                                
+                                if file_path:
+                                    try:
+                                        if not Path(file_path).exists():
+                                            season_missing = True
+                                            missing_ep_count += 1
+                                    except:
+                                        season_missing = True
+                                        missing_ep_count += 1
+                                elif not ep.get('file_exists', True):
+                                    season_missing = True
+                                    missing_ep_count += 1
+                            
+                            if season_missing and season_num > 0:  # Skip specials (season 0)
+                                missing_seasons.append(season_num)
+                                logger.debug(f"    Season {season_num}: {missing_ep_count} episode(s) missing")
+                        
+                        if not missing_seasons:
+                            logger.debug(f"  [OK] '{item['title']}' (all episodes exist)")
+                            stats['already_exist'] += 1
+                            continue
+                        
+                        logger.info(f"  Missing seasons for '{item['title']}': {missing_seasons}")
+                        stats['total_missing'] += 1
                     
-                    # Only submit if episodes are actually missing
-                    if current_episodes >= backed_up_episodes:
-                        logger.debug(f"  [OK] '{item['title']}' ({current_episodes}/{backed_up_episodes} episodes)")
-                        stats['already_exist'] += 1
-                        continue
-                    
-                    # Episodes are missing
-                    logger.debug(f"  Missing: '{item['title']}' ({current_episodes}/{backed_up_episodes} episodes)")
-                    stats['total_missing'] += 1
+                    else:
+                        # Standard mode - compare episode counts
+                        current_episodes = 0
+                        try:
+                            url = f'{plex_url}/library/metadata/{item["ratingKey"]}'
+                            response = request_with_retry(plex_session, 'get', url, timeout=10)
+                            if response.status_code == 200:
+                                data = response.json()
+                                metadata = data.get('MediaContainer', {}).get('Metadata', [])
+                                if metadata:
+                                    current_episodes = metadata[0].get('leafCount', 0)
+                        except Exception as e:
+                            logger.debug(f"  Error querying {item['title']}: {e}")
+                            current_episodes = backed_up_episodes  # Assume OK if can't query
+                        
+                        # Only submit if episodes are actually missing
+                        if current_episodes >= backed_up_episodes:
+                            logger.debug(f"  [OK] '{item['title']}' ({current_episodes}/{backed_up_episodes} episodes)")
+                            stats['already_exist'] += 1
+                            continue
+                        
+                        # Episodes are missing
+                        logger.debug(f"  Missing: '{item['title']}' ({current_episodes}/{backed_up_episodes} episodes)")
+                        stats['total_missing'] += 1
                     # Continue to submission below
                 
                 # For movies: check if file exists on disk
@@ -573,14 +775,23 @@ class PlexLibraryBackup:
                             stats['requests_skipped'] += 1
                             continue
                         
-                        logger.info(f"  [SUB] Submitting '{item['title']}' (TMDB ID: {tmdb_id})")
-                        
-                        # TV request - seasons must be the string "all"
-                        request_data = {
-                            'mediaType': 'tv',
-                            'mediaId': int(tmdb_id),
-                            'seasons': 'all'
-                        }
+                        # Determine which seasons to request
+                        if missing_seasons:
+                            # Request specific missing seasons
+                            logger.info(f"  [SUB] Submitting '{item['title']}' seasons {missing_seasons} (TMDB ID: {tmdb_id})")
+                            request_data = {
+                                'mediaType': 'tv',
+                                'mediaId': int(tmdb_id),
+                                'seasons': missing_seasons  # List of season numbers
+                            }
+                        else:
+                            # Request all seasons (standard mode)
+                            logger.info(f"  [SUB] Submitting '{item['title']}' (TMDB ID: {tmdb_id})")
+                            request_data = {
+                                'mediaType': 'tv',
+                                'mediaId': int(tmdb_id),
+                                'seasons': 'all'
+                            }
                     
                     else:
                         logger.info(f"  [SKIP] '{item['title']}' (unsupported type: {item['type']})")
@@ -680,6 +891,8 @@ def main():
                        help='Libraries to skip (default: AudioBooks, Mike\'s Audio Books)')
     parser.add_argument('--no-verify', action='store_true', 
                        help='Skip file existence verification during export (faster)')
+    parser.add_argument('--detailed-episodes', action='store_true',
+                       help='Fetch individual episode details for TV shows (slower but enables per-episode tracking)')
     parser.add_argument('--batch-limit', type=int, 
                        help='Maximum number of requests to create per batch')
     parser.add_argument('--progress', 
@@ -701,11 +914,15 @@ def main():
     
     if args.export:
         logger.info(f"Exporting to: {args.export}")
+        if args.detailed_episodes:
+            logger.info("Detailed episode mode enabled - this will take longer")
+        
         stats = plex.export_library(
             args.libraries,
             args.export,
             verify_files=not args.no_verify,
-            skip_libraries=args.skip_libraries
+            skip_libraries=args.skip_libraries,
+            detailed_episodes=args.detailed_episodes
         )
         
         
@@ -714,6 +931,9 @@ def main():
         logger.info(f"  Total items: {stats['total_items']}")
         logger.info(f"  Movies: {stats['movies']}")
         logger.info(f"  TV Shows: {stats['shows']}")
+        if stats.get('episodes', 0) > 0:
+            logger.info(f"  Episodes tracked: {stats['episodes']}")
+            logger.info(f"  Missing episodes: {stats.get('missing_episodes', 0)}")
         logger.info(f"  Verified (files exist): {stats['verified_items']}")
         logger.info(f"  Missing files: {stats['missing_files']}")
         logger.info(f"  Errors: {stats['errors']}")
