@@ -60,6 +60,28 @@ Use the backup file you created BEFORE the disaster:
 - **Overseerr must resync second** - So it will accept restore requests  
 - **Use pre-disaster backup** - Contains all files that existed before loss occurred
 
+### Important: Sonarr/Radarr Integration
+
+**Overseerr submits requests to Sonarr/Radarr, but if those apps already have the media entry from the original request, they won't re-download it.**
+
+**Automatic Solution (Recommended):**
+Configure Radarr and Sonarr URLs/API tokens in the Settings tab. When you enable Force Mode during restore, the tool will automatically:
+1. Clear entries from Overseerr
+2. Clear movie entries from Radarr  
+3. Clear series entries from Sonarr
+4. Submit fresh requests
+
+**Manual Solution:**
+If you prefer not to configure Radarr/Sonarr integration:
+- Use [Maintainerr](https://github.com/jorenn92/maintainerr) to clean up stale entries
+- Or manually delete entries in Sonarr/Radarr before restoring
+
+**Why this matters:**
+Without clearing Radarr/Sonarr entries:
+- Overseerr sends request to Sonarr/Radarr
+- Sonarr/Radarr says "I already have this" (even though files are gone)
+- Nothing gets downloaded
+
 ## Features
 
 - 📦 **Backup Plex Library** - Exports metadata for movies and TV shows
@@ -275,10 +297,13 @@ Both `.json` and `.json.gz` files are supported for restore and review operation
 
 If Overseerr ignores your restore requests because it thinks content already exists, use **Force Mode**:
 
-**Web UI:** Check "Force re-request (clear existing media data)" in the Restore tab
+**Web UI:** 
+1. Configure Radarr/Sonarr URLs and API tokens in Settings (optional but recommended)
+2. Check "Force re-request (clear existing media data)" in the Restore tab
 
 **Command Line:**
 ```bash
+# Basic force mode (Overseerr only)
 python plex_overseerr_backup.py \
   --plex-url http://localhost:32400 \
   --plex-token YOUR_PLEX_TOKEN \
@@ -286,19 +311,34 @@ python plex_overseerr_backup.py \
   --overseerr-url http://localhost:5055 \
   --overseerr-token YOUR_OVERSEERR_TOKEN \
   --force
+
+# Full force mode (Overseerr + Radarr + Sonarr)
+python plex_overseerr_backup.py \
+  --plex-url http://localhost:32400 \
+  --plex-token YOUR_PLEX_TOKEN \
+  --import backups/plex_backup.json \
+  --overseerr-url http://localhost:5055 \
+  --overseerr-token YOUR_OVERSEERR_TOKEN \
+  --radarr-url http://localhost:7878 \
+  --radarr-token YOUR_RADARR_TOKEN \
+  --sonarr-url http://localhost:8989 \
+  --sonarr-token YOUR_SONARR_TOKEN \
+  --force
 ```
 
 **What it does:**
-1. Looks up each item in Overseerr's database
-2. If Overseerr thinks it's "available", deletes that record
-3. Then submits the request normally
+1. Looks up each item in Overseerr's database - clears if found
+2. Looks up movies in Radarr - clears if found (when configured)
+3. Looks up TV shows in Sonarr - clears if found (when configured)
+4. Submits fresh request to Overseerr
 
 **When to use:**
 - Overseerr's cache is stale and thinks files exist when they don't
+- Radarr/Sonarr still have entries from previous requests
 - You've already requested something before but files were deleted
 - Overseerr shows "Already Requested" for content you need
 
-**Note:** This clears request history for affected items. For disaster recovery, this is usually acceptable since you want the content re-downloaded anyway.
+**Note:** This clears entries from all configured services. Files are NOT deleted (deleteFiles=false). For disaster recovery, this is usually exactly what you want - fresh entries that will trigger new downloads.
 
 ### Review Missing Now Dynamically Checks Files
 
@@ -473,6 +513,15 @@ This error from Overseerr means the seasons parameter is wrong. Make sure you're
 1. First, try resyncing: Overseerr → Settings → Integrations → Plex → "Test Connection" or "Resync"
 2. If that doesn't work, use **Force Mode** in the Restore tab (or `--force` on command line)
 3. Force mode clears Overseerr's record of the media so it can be re-requested
+
+### "Requests created but nothing downloads"
+**Cause:** Sonarr/Radarr already has the media entry from the original request
+**Solution:**
+1. Configure Radarr/Sonarr URLs and API tokens in Settings
+2. Enable Force Mode when restoring - it will automatically clear entries from Radarr/Sonarr
+3. If you don't want to use Force Mode, manually delete entries in Sonarr/Radarr
+
+**Note:** Force mode with Radarr/Sonarr configured is the recommended approach for disaster recovery.
 
 ### "Shows/movies appear in backup but not requested"
 **Cause:** File still exists on disk even though you thought it was deleted

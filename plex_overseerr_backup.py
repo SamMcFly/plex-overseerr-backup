@@ -612,12 +612,179 @@ class PlexLibraryBackup:
             logger.error(f"    Error clearing '{title}' from Overseerr: {e}")
             return False
 
+    def clear_radarr_movie(self, radarr_session, radarr_url: str, 
+                          tmdb_id: str, title: str) -> bool:
+        """
+        Clear movie from Radarr database OR trigger a search if it exists with missing files.
+        
+        Args:
+            radarr_session: Requests session with auth headers
+            radarr_url: Base URL for Radarr
+            tmdb_id: TMDB ID of the movie
+            title: Title for logging
+            
+        Returns:
+            True if cleared/searched successfully or movie didn't exist, False on error
+        """
+        try:
+            # First, get all movies and find by TMDB ID
+            # Radarr API: GET /api/v3/movie returns all movies
+            lookup_url = f'{radarr_url}/api/v3/movie'
+            response = request_with_retry(radarr_session, 'get', lookup_url, timeout=30)
+            
+            if response.status_code != 200:
+                logger.warning(f"    Failed to query Radarr: HTTP {response.status_code}")
+                return False
+            
+            movies = response.json()
+            
+            # Find movie by TMDB ID
+            movie_entry = None
+            for movie in movies:
+                if str(movie.get('tmdbId')) == str(tmdb_id):
+                    movie_entry = movie
+                    break
+            
+            if not movie_entry:
+                logger.debug(f"    '{title}' not in Radarr database (OK)")
+                return True
+            
+            movie_id = movie_entry.get('id')
+            has_file = movie_entry.get('hasFile', False)
+            
+            if has_file:
+                # Movie exists and has file - don't touch it
+                logger.debug(f"    '{title}' exists in Radarr with file - skipping")
+                return True
+            
+            # Movie exists but no file - trigger a search
+            logger.info(f"    '{title}' in Radarr (id: {movie_id}) - no file, triggering search...")
+            
+            search_url = f'{radarr_url}/api/v3/command'
+            search_data = {
+                'name': 'MoviesSearch',
+                'movieIds': [movie_id]
+            }
+            
+            search_response = request_with_retry(
+                radarr_session, 'post', search_url, 
+                json=search_data, timeout=15
+            )
+            
+            if search_response.status_code in (200, 201):
+                logger.info(f"    [OK] Triggered search for '{title}' in Radarr")
+                return True
+            else:
+                logger.warning(f"    Failed to trigger search in Radarr: HTTP {search_response.status_code}")
+                # Fall back to delete
+                logger.info(f"    Falling back to delete for '{title}'...")
+                delete_url = f'{radarr_url}/api/v3/movie/{movie_id}?deleteFiles=false&addImportExclusion=false'
+                delete_response = request_with_retry(radarr_session, 'delete', delete_url, timeout=15)
+                
+                if delete_response.status_code in (200, 204):
+                    logger.info(f"    [OK] Deleted '{title}' from Radarr")
+                    return True
+                else:
+                    logger.warning(f"    Failed to delete '{title}' from Radarr: HTTP {delete_response.status_code}")
+                    return False
+                
+        except Exception as e:
+            logger.error(f"    Error processing '{title}' in Radarr: {e}")
+            return False
+
+    def clear_sonarr_series(self, sonarr_session, sonarr_url: str, 
+                           tvdb_id: str, title: str) -> bool:
+        """
+        Clear series from Sonarr database OR trigger a search if it exists with missing files.
+        
+        Args:
+            sonarr_session: Requests session with auth headers
+            sonarr_url: Base URL for Sonarr
+            tvdb_id: TVDB ID of the series
+            title: Title for logging
+            
+        Returns:
+            True if cleared/searched successfully or series didn't exist, False on error
+        """
+        try:
+            # First, get all series and find by TVDB ID
+            # Sonarr API: GET /api/v3/series returns all series
+            lookup_url = f'{sonarr_url}/api/v3/series'
+            response = request_with_retry(sonarr_session, 'get', lookup_url, timeout=30)
+            
+            if response.status_code != 200:
+                logger.warning(f"    Failed to query Sonarr: HTTP {response.status_code}")
+                return False
+            
+            series_list = response.json()
+            
+            # Find series by TVDB ID
+            series_entry = None
+            for series in series_list:
+                if str(series.get('tvdbId')) == str(tvdb_id):
+                    series_entry = series
+                    break
+            
+            if not series_entry:
+                logger.debug(f"    '{title}' not in Sonarr database (OK)")
+                return True
+            
+            series_id = series_entry.get('id')
+            stats = series_entry.get('statistics', {})
+            episode_count = stats.get('episodeCount', 0)
+            episode_file_count = stats.get('episodeFileCount', 0)
+            missing_count = episode_count - episode_file_count
+            
+            if missing_count == 0 and episode_file_count > 0:
+                # Series has all files - don't touch it
+                logger.debug(f"    '{title}' exists in Sonarr with all files - skipping")
+                return True
+            
+            # Series exists but has missing files - trigger a search
+            logger.info(f"    '{title}' in Sonarr (id: {series_id}) - {missing_count} missing episodes, triggering search...")
+            
+            search_url = f'{sonarr_url}/api/v3/command'
+            search_data = {
+                'name': 'SeriesSearch',
+                'seriesId': series_id
+            }
+            
+            search_response = request_with_retry(
+                sonarr_session, 'post', search_url, 
+                json=search_data, timeout=15
+            )
+            
+            if search_response.status_code in (200, 201):
+                logger.info(f"    [OK] Triggered search for '{title}' in Sonarr ({missing_count} missing episodes)")
+                return True
+            else:
+                logger.warning(f"    Failed to trigger search in Sonarr: HTTP {search_response.status_code}")
+                # Fall back to delete
+                logger.info(f"    Falling back to delete for '{title}'...")
+                delete_url = f'{sonarr_url}/api/v3/series/{series_id}?deleteFiles=false'
+                delete_response = request_with_retry(sonarr_session, 'delete', delete_url, timeout=15)
+                
+                if delete_response.status_code in (200, 204):
+                    logger.info(f"    [OK] Deleted '{title}' from Sonarr")
+                    return True
+                else:
+                    logger.warning(f"    Failed to delete '{title}' from Sonarr: HTTP {delete_response.status_code}")
+                    return False
+                
+        except Exception as e:
+            logger.error(f"    Error processing '{title}' in Sonarr: {e}")
+            return False
+
     def restore_to_overseerr(self, backup_file: str, overseerr_url: str, 
                             overseerr_token: str, plex_url: str, plex_token: str,
                             batch_limit: Optional[int] = None, 
                             progress_file: Optional[str] = None,
                             auto_approve: bool = False,
-                            force: bool = False) -> Dict:
+                            force: bool = False,
+                            radarr_url: Optional[str] = None,
+                            radarr_token: Optional[str] = None,
+                            sonarr_url: Optional[str] = None,
+                            sonarr_token: Optional[str] = None) -> Dict:
         """
         Restore backup to Overseerr by creating requests for MISSING files only
         Re-verifies files exist before submitting to avoid false requests
@@ -698,6 +865,32 @@ class PlexLibraryBackup:
             'Accept': 'application/json'
         })
         
+        # Setup Radarr session if configured
+        radarr_session = None
+        if radarr_url and radarr_token:
+            radarr_url = radarr_url.rstrip('/')
+            radarr_session = requests.Session()
+            radarr_session.trust_env = False
+            radarr_session.headers.update({
+                'X-Api-Key': radarr_token,
+                'Content-Type': 'application/json'
+            })
+            radarr_session.verify = False
+            logger.info(f"[OK] Configured Radarr session for {radarr_url}")
+        
+        # Setup Sonarr session if configured
+        sonarr_session = None
+        if sonarr_url and sonarr_token:
+            sonarr_url = sonarr_url.rstrip('/')
+            sonarr_session = requests.Session()
+            sonarr_session.trust_env = False
+            sonarr_session.headers.update({
+                'X-Api-Key': sonarr_token,
+                'Content-Type': 'application/json'
+            })
+            sonarr_session.verify = False
+            logger.info(f"[OK] Configured Sonarr session for {sonarr_url}")
+        
         stats = {
             'total_missing': 0,
             'requests_created': 0,
@@ -706,11 +899,17 @@ class PlexLibraryBackup:
             'batch_limit_reached': False,
             'errors': 0,
             're_verified_exist': 0,
-            'force_cleared': 0
+            'force_cleared': 0,
+            'radarr_searched': 0,
+            'sonarr_searched': 0
         }
         
         if force:
             logger.info("Force mode enabled - will clear existing media data before requesting")
+            if radarr_session:
+                logger.info("  Radarr integration: ENABLED - will trigger searches for missing movies")
+            if sonarr_session:
+                logger.info("  Sonarr integration: ENABLED - will trigger searches for missing episodes")
         
         logger.info("Restoring to Overseerr (only missing files)...")
         
@@ -843,12 +1042,37 @@ class PlexLibraryBackup:
                     # Force clear existing media data if requested
                     if force:
                         media_type = 'movie' if item['type'] == 'movie' else 'tv'
+                        
+                        # Clear from Overseerr
                         cleared = self.clear_overseerr_media(
                             overseerr_session, overseerr_url,
                             media_type, tmdb_id, item['title']
                         )
                         if cleared:
                             stats['force_cleared'] += 1
+                        
+                        # Clear from Radarr (movies only)
+                        if item['type'] == 'movie' and radarr_session:
+                            radarr_cleared = self.clear_radarr_movie(
+                                radarr_session, radarr_url,
+                                tmdb_id, item['title']
+                            )
+                            if radarr_cleared:
+                                stats['radarr_searched'] += 1
+                        
+                        # Clear from Sonarr (TV shows only)
+                        if item['type'] == 'show' and sonarr_session:
+                            tvdb_id = item.get('tvdb_id')
+                            if tvdb_id:
+                                sonarr_cleared = self.clear_sonarr_series(
+                                    sonarr_session, sonarr_url,
+                                    tvdb_id, item['title']
+                                )
+                                if sonarr_cleared:
+                                    stats['sonarr_searched'] += 1
+                            else:
+                                logger.debug(f"    No TVDB ID for '{item['title']}' - skipping Sonarr clear")
+                        
                         # Continue even if clear failed - the request might still work
                     
                     if item['type'] == 'movie':
@@ -972,6 +1196,10 @@ def main():
     parser.add_argument('--import', help='Restore from backup JSON file')
     parser.add_argument('--overseerr-url', help='Overseerr server URL')
     parser.add_argument('--overseerr-token', help='Overseerr API token')
+    parser.add_argument('--radarr-url', help='Radarr server URL (for force mode)')
+    parser.add_argument('--radarr-token', help='Radarr API token (for force mode)')
+    parser.add_argument('--sonarr-url', help='Sonarr server URL (for force mode)')
+    parser.add_argument('--sonarr-token', help='Sonarr API token (for force mode)')
     parser.add_argument('--libraries', nargs='+', help='Specific libraries to export')
     parser.add_argument('--skip-libraries', nargs='+', default=['AudioBooks', "Mike's Audio Books"],
                        help='Libraries to skip (default: AudioBooks, Mike\'s Audio Books)')
@@ -986,7 +1214,7 @@ def main():
     parser.add_argument('--auto-approve', action='store_true',
                        help='Auto-approve requests (default: requests need manual approval)')
     parser.add_argument('--force', action='store_true',
-                       help='Force re-request by clearing existing media data from Overseerr first')
+                       help='Force re-request by clearing existing media data from Overseerr/Radarr/Sonarr first')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose logging')
     
     args = parser.parse_args()
@@ -1034,6 +1262,10 @@ def main():
         
         if args.force:
             logger.info("Force mode enabled - existing media data will be cleared before requesting")
+            if args.radarr_url and args.radarr_token:
+                logger.info(f"  Radarr: {args.radarr_url}")
+            if args.sonarr_url and args.sonarr_token:
+                logger.info(f"  Sonarr: {args.sonarr_url}")
         
         stats = plex.restore_to_overseerr(
             args.__dict__.get('import'),
@@ -1044,7 +1276,11 @@ def main():
             batch_limit=args.batch_limit,
             progress_file=args.progress,
             auto_approve=args.auto_approve,
-            force=args.force
+            force=args.force,
+            radarr_url=args.radarr_url,
+            radarr_token=args.radarr_token,
+            sonarr_url=args.sonarr_url,
+            sonarr_token=args.sonarr_token
         )
         
         
@@ -1054,6 +1290,10 @@ def main():
         logger.info(f"  Requests created: {stats['requests_created']}")
         if stats.get('force_cleared', 0) > 0:
             logger.info(f"  Force-cleared from Overseerr: {stats['force_cleared']}")
+        if stats.get('radarr_searched', 0) > 0:
+            logger.info(f"  Radarr searches triggered: {stats['radarr_searched']}")
+        if stats.get('sonarr_searched', 0) > 0:
+            logger.info(f"  Sonarr searches triggered: {stats['sonarr_searched']}")
         logger.info(f"  Already exist locally: {stats['already_exist']}")
         logger.info(f"  Skipped (already submitted): {stats['requests_skipped']}")
         logger.info(f"  Errors: {stats['errors']}")

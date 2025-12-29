@@ -211,6 +211,8 @@ Backups include SHA256 checksums. If a backup is corrupted, you'll see a warning
 - Overseerr must resync to request the missing files
 - Use the backup you created before files were lost
 
+**Important:** If Sonarr/Radarr still have the media entries (just without files), they won't re-download. You may need to remove stale entries from Sonarr/Radarr first, or use [Maintainerr](https://github.com/jorenn92/maintainerr) to clean them up automatically.
+
 ## Support
 
 Need help?
