@@ -7,6 +7,8 @@ Runs backups on a schedule and automatically cleans up old backups
 import os
 import sys
 import json
+import gzip
+import shutil
 import argparse
 import subprocess
 import logging
@@ -20,7 +22,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('plex_backup_scheduler.log'),
+        logging.FileHandler('plex_backup_scheduler.log', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -44,7 +46,7 @@ class BackupScheduler:
             sys.exit(1)
         
         try:
-            with open(self.config_file, 'r') as f:
+            with open(self.config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
             
             # Validate required fields
@@ -60,7 +62,38 @@ class BackupScheduler:
             logger.error(f"Failed to load config: {e}")
             sys.exit(1)
     
-    def run_backup(self, verify_files=True, libraries=None):
+    def compress_backup(self, backup_file: Path) -> Path:
+        """
+        Compress backup file with gzip
+        
+        Args:
+            backup_file: Path to the JSON backup file
+            
+        Returns:
+            Path to the compressed .json.gz file
+        """
+        try:
+            gz_file = backup_file.with_suffix('.json.gz')
+            
+            with open(backup_file, 'rb') as f_in:
+                with gzip.open(gz_file, 'wb', compresslevel=9) as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            
+            original_size = backup_file.stat().st_size
+            compressed_size = gz_file.stat().st_size
+            ratio = (1 - compressed_size / original_size) * 100
+            
+            logger.info(f"  Compressed: {original_size / 1024:.1f} KB → {compressed_size / 1024:.1f} KB ({ratio:.1f}% reduction)")
+            
+            # Remove original uncompressed file
+            backup_file.unlink()
+            
+            return gz_file
+        except Exception as e:
+            logger.error(f"Compression failed: {e}")
+            return backup_file  # Return original if compression fails
+    
+    def run_backup(self, verify_files=True, libraries=None, compress=True):
         """Execute backup using plex_overseerr_backup.py"""
         try:
             # Generate unique filename with timestamp
@@ -86,7 +119,7 @@ class BackupScheduler:
                 cmd.extend(['--libraries'] + libraries)
             
             # Run backup
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
             
             # Log output
             if result.stdout:
@@ -97,6 +130,11 @@ class BackupScheduler:
             if result.returncode == 0:
                 logger.info(f"✓ Backup successful: {backup_file}")
                 logger.info(f"  File size: {backup_file.stat().st_size / 1024:.1f} KB")
+                
+                # Compress if requested
+                if compress and backup_file.exists():
+                    backup_file = self.compress_backup(backup_file)
+                
                 return backup_file
             else:
                 logger.error(f"✗ Backup failed with code {result.returncode}")
@@ -115,7 +153,13 @@ class BackupScheduler:
             removed_count = 0
             removed_size = 0
             
-            for backup_file in sorted(self.backup_dir.glob('plex_library_*.json')):
+            # Look for both .json and .json.gz files
+            patterns = ['plex_library_*.json', 'plex_library_*.json.gz']
+            backup_files = []
+            for pattern in patterns:
+                backup_files.extend(self.backup_dir.glob(pattern))
+            
+            for backup_file in sorted(backup_files):
                 file_mtime = backup_file.stat().st_mtime
                 
                 if file_mtime < cutoff_timestamp:
@@ -135,7 +179,12 @@ class BackupScheduler:
     
     def list_backups(self):
         """List all existing backups"""
-        backups = sorted(self.backup_dir.glob('plex_library_*.json'), reverse=True)
+        # Look for both .json and .json.gz files
+        patterns = ['plex_library_*.json', 'plex_library_*.json.gz']
+        backups = []
+        for pattern in patterns:
+            backups.extend(self.backup_dir.glob(pattern))
+        backups = sorted(backups, reverse=True)
         
         if not backups:
             logger.info("No backups found")
@@ -144,23 +193,27 @@ class BackupScheduler:
         logger.info("\nBackup History:")
         logger.info("-" * 80)
         
+        total_size = 0
         for backup in backups:
             stat = backup.stat()
             size_kb = stat.st_size / 1024
+            total_size += stat.st_size
             mtime = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-            logger.info(f"  {backup.name}")
+            compressed = " (compressed)" if backup.suffix == '.gz' else ""
+            logger.info(f"  {backup.name}{compressed}")
             logger.info(f"    Modified: {mtime}")
             logger.info(f"    Size: {size_kb:.1f} KB")
         
         logger.info("-" * 80)
         logger.info(f"Total backups: {len(backups)}")
+        logger.info(f"Total size: {total_size / 1024:.1f} KB ({total_size / (1024*1024):.2f} MB)")
     
-    def schedule_daily(self, hour=2, minute=0, verify_files=True, cleanup_days=30):
+    def schedule_daily(self, hour=2, minute=0, verify_files=True, cleanup_days=30, compress=True):
         """Schedule daily backup at specified time"""
         time_str = f"{hour:02d}:{minute:02d}"
         
         def backup_job():
-            self.run_backup(verify_files=verify_files)
+            self.run_backup(verify_files=verify_files, compress=compress)
             self.cleanup_old_backups(days_to_keep=cleanup_days)
         
         schedule.every().day.at(time_str).do(backup_job)
@@ -168,7 +221,7 @@ class BackupScheduler:
         
         return self._run_scheduler()
     
-    def schedule_weekly(self, day='sunday', hour=2, minute=0, verify_files=True, cleanup_days=30):
+    def schedule_weekly(self, day='sunday', hour=2, minute=0, verify_files=True, cleanup_days=30, compress=True):
         """Schedule weekly backup on specified day"""
         day = day.lower()
         valid_days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -180,7 +233,7 @@ class BackupScheduler:
         time_str = f"{hour:02d}:{minute:02d}"
         
         def backup_job():
-            self.run_backup(verify_files=verify_files)
+            self.run_backup(verify_files=verify_files, compress=compress)
             self.cleanup_old_backups(days_to_keep=cleanup_days)
         
         day_method = getattr(schedule.every(), day)
@@ -210,26 +263,15 @@ class BackupScheduler:
             hour, minute = map(int, time_str.split(':'))
             
             if day:
-                # Weekly backup
                 day_num = {
-                    'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4,
-                    'friday': 5, 'saturday': 6, 'sunday': 0
-                }.get(day.lower())
-                
-                if day_num is None:
-                    logger.error(f"Invalid day: {day}")
-                    return None
-                
-                cron_line = f"{minute} {hour} * * {day_num}"
+                    'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+                    'thursday': 4, 'friday': 5, 'saturday': 6
+                }.get(day.lower(), 0)
+                cron_line = f"{minute} {hour} * * {day_num} cd {os.getcwd()} && {sys.executable} backup_scheduler.py --backup-now --cleanup 30"
             else:
-                # Daily backup
-                cron_line = f"{minute} {hour} * * *"
+                cron_line = f"{minute} {hour} * * * cd {os.getcwd()} && {sys.executable} backup_scheduler.py --backup-now --cleanup 30"
             
-            # Get current working directory
-            cwd = Path.cwd()
-            cmd = f"cd {cwd} && python backup_scheduler.py --backup-now --cleanup 30"
-            
-            return f"{cron_line} {cmd}"
+            return cron_line
         except Exception as e:
             logger.error(f"Error generating crontab: {e}")
             return None
@@ -238,15 +280,8 @@ class BackupScheduler:
         """Generate Windows Task Scheduler command"""
         try:
             hour, minute = map(int, time_str.split(':'))
-            
-            # Get current working directory
-            cwd = Path.cwd()
-            
-            # Windows task name
+            cwd = os.getcwd()
             task_name = "PlexBackup"
-            
-            # Command to run
-            cmd = f'python backup_scheduler.py --backup-now --cleanup 30'
             
             logger.info("\n" + "="*70)
             logger.info("WINDOWS TASK SCHEDULER SETUP")
@@ -324,8 +359,8 @@ Examples:
   # One-time backup now
   python backup_scheduler.py --backup-now
 
-  # One-time backup with cleanup
-  python backup_scheduler.py --backup-now --cleanup 30
+  # One-time backup with cleanup (no compression)
+  python backup_scheduler.py --backup-now --cleanup 30 --no-compress
 
   # Generate crontab line for daily backup at 2 AM (Linux/Mac)
   python backup_scheduler.py --crontab 02:00
@@ -361,6 +396,8 @@ Examples:
                        help='Run backup immediately')
     parser.add_argument('--no-verify', action='store_true',
                        help='Skip file verification (faster)')
+    parser.add_argument('--no-compress', action='store_true',
+                       help='Skip gzip compression of backup')
     parser.add_argument('--list', action='store_true',
                        help='List all backups')
     parser.add_argument('--cleanup', type=int, metavar='DAYS',
@@ -390,7 +427,10 @@ Examples:
     
     # Handle one-time backup
     if args.backup_now:
-        scheduler.run_backup(verify_files=not args.no_verify)
+        scheduler.run_backup(
+            verify_files=not args.no_verify,
+            compress=not args.no_compress
+        )
         if args.cleanup:
             scheduler.cleanup_old_backups(days_to_keep=args.cleanup)
         return
@@ -430,6 +470,7 @@ Examples:
     
     # Handle scheduling
     verify = args.verify and not args.no_verify
+    compress = not args.no_compress
     
     if args.daily:
         try:
@@ -438,7 +479,8 @@ Examples:
                 hour=hour,
                 minute=minute,
                 verify_files=verify,
-                cleanup_days=args.retention
+                cleanup_days=args.retention,
+                compress=compress
             )
         except ValueError:
             logger.error(f"Invalid time format: {args.daily}. Use HH:MM")
@@ -453,7 +495,8 @@ Examples:
                 hour=hour,
                 minute=minute,
                 verify_files=verify,
-                cleanup_days=args.retention
+                cleanup_days=args.retention,
+                compress=compress
             )
         except ValueError:
             logger.error(f"Invalid time format: {time_str}. Use HH:MM")

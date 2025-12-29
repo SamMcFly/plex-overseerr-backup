@@ -12,7 +12,8 @@ import requests
 import json
 import sys
 import argparse
-import matplotlib.pyplot as plt
+import hashlib
+import time
 from collections import defaultdict
 from pathlib import Path
 from datetime import datetime
@@ -25,7 +26,6 @@ import warnings
 # Suppress SSL warnings and urllib3 warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
-import os
 
 # IMPORTANT: Disable Windows proxy detection to avoid hangs
 os.environ['NO_PROXY'] = '*'
@@ -40,6 +40,76 @@ logging.basicConfig(
     encoding='utf-8'
 )
 logger = logging.getLogger(__name__)
+
+# Constants
+REQUEST_TIMEOUT = 30
+OVERSEERR_DELAY = 1  # Delay between Overseerr requests to avoid rate limiting
+MAX_RETRIES = 3
+
+
+def calculate_checksum(file_path: str) -> str:
+    """Calculate SHA256 checksum of a file"""
+    sha256 = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(8192), b''):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def request_with_retry(session, method: str, url: str, max_retries: int = MAX_RETRIES, **kwargs) -> requests.Response:
+    """
+    Make HTTP request with retry logic for transient failures
+    
+    Args:
+        session: requests.Session object
+        method: HTTP method ('get', 'post', etc.)
+        url: Request URL
+        max_retries: Maximum number of retry attempts
+        **kwargs: Additional arguments passed to requests
+    
+    Returns:
+        Response object
+    """
+    kwargs.setdefault('timeout', REQUEST_TIMEOUT)
+    
+    last_exception = None
+    for attempt in range(max_retries):
+        try:
+            response = getattr(session, method)(url, **kwargs)
+            
+            # Handle rate limiting
+            if response.status_code == 429:
+                wait = int(response.headers.get('Retry-After', 60))
+                logger.warning(f"Rate limited, waiting {wait}s...")
+                time.sleep(wait)
+                continue
+            
+            return response
+            
+        except requests.exceptions.Timeout as e:
+            last_exception = e
+            if attempt < max_retries - 1:
+                wait_time = 5 * (attempt + 1)
+                logger.warning(f"Timeout, retrying in {wait_time}s ({attempt + 1}/{max_retries})...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Request failed after {max_retries} attempts")
+                raise
+        
+        except requests.exceptions.ConnectionError as e:
+            last_exception = e
+            if attempt < max_retries - 1:
+                wait_time = 5 * (attempt + 1)
+                logger.warning(f"Connection error, retrying in {wait_time}s ({attempt + 1}/{max_retries})...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Connection failed after {max_retries} attempts")
+                raise
+    
+    # If we get here, all retries failed
+    if last_exception:
+        raise last_exception
+    return response
 
 
 class PlexLibraryBackup:
@@ -62,7 +132,7 @@ class PlexLibraryBackup:
         
         # Verify connection
         try:
-            response = self.session.get(f'{self.plex_url}/identity', timeout=10)
+            response = request_with_retry(self.session, 'get', f'{self.plex_url}/identity')
             if response.status_code != 200:
                 raise RuntimeError(f"Failed to connect to Plex: {response.status_code}")
             logger.info("[OK] Connected to Plex server")
@@ -72,7 +142,7 @@ class PlexLibraryBackup:
     def get_libraries(self) -> Dict[str, str]:
         """Get all libraries and their types"""
         try:
-            response = self.session.get(f'{self.plex_url}/library/sections', timeout=10)
+            response = request_with_retry(self.session, 'get', f'{self.plex_url}/library/sections')
             libs = {}
             for section in response.json()['MediaContainer']['Directory']:
                 libs[section['title']] = section['type']
@@ -85,7 +155,7 @@ class PlexLibraryBackup:
         """Get all items from a specific library"""
         try:
             # First, get the library key
-            response = self.session.get(f'{self.plex_url}/library/sections', timeout=10)
+            response = request_with_retry(self.session, 'get', f'{self.plex_url}/library/sections')
             library_key = None
             
             for section in response.json()['MediaContainer']['Directory']:
@@ -102,7 +172,7 @@ class PlexLibraryBackup:
                 url = f'{self.plex_url}/library/sections/{library_key}/all'
                 # Request all items at once without limit, including GUIDs
                 params = {'X-Plex-Token': self.plex_token, 'includeExternalMedia': 1, 'includeGuids': 1}
-                response = self.session.get(url, params=params, timeout=60)
+                response = request_with_retry(self.session, 'get', url, params=params, timeout=60)
                 
                 if response.status_code != 200:
                     logger.error(f"  HTTP {response.status_code}")
@@ -175,23 +245,21 @@ class PlexLibraryBackup:
         if skip_libraries is None:
             skip_libraries = []
         
-        backup_data = {
-            'exported_at': datetime.now().isoformat(),
-            'plex_url': self.plex_url,
-            'libraries': {}
-        }
-        
         stats = {
             'total_items': 0,
             'verified_items': 0,
             'missing_files': 0,
-            'errors': 0
+            'errors': 0,
+            'movies': 0,
+            'shows': 0
         }
         
         if not library_names:
             all_libs = self.get_libraries()
             library_names = list(all_libs.keys())
             logger.info(f"No libraries specified, exporting all: {', '.join(library_names)}")
+        
+        libraries_data = {}
         
         for lib_name in library_names:
             # Skip if in skip list
@@ -212,6 +280,12 @@ class PlexLibraryBackup:
                         'year': item.get('year'),
                         'ratingKey': item.get('ratingKey'),
                     }
+                    
+                    # Track item types
+                    if item.get('type') == 'movie':
+                        stats['movies'] += 1
+                    elif item.get('type') == 'show':
+                        stats['shows'] += 1
                     
                     # Extract external IDs for Overseerr restore
                     if 'Guid' in item:
@@ -258,16 +332,41 @@ class PlexLibraryBackup:
                     stats['errors'] += 1
                     continue
             
-            backup_data['libraries'][lib_name] = library_backup
+            libraries_data[lib_name] = library_backup
+        
+        # Build backup data with stats
+        backup_data = {
+            'exported_at': datetime.now().isoformat(),
+            'plex_url': self.plex_url,
+            'version': '1.1',
+            'stats': {
+                'total_items': stats['total_items'],
+                'movies': stats['movies'],
+                'shows': stats['shows'],
+                'verified': stats['verified_items'],
+                'missing': stats['missing_files'],
+                'errors': stats['errors']
+            },
+            'libraries': libraries_data
+        }
         
         try:
             output_path = Path(output_file)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
-            with open(output_path, 'w') as f:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(backup_data, f, indent=2)
+            
+            # Calculate and add checksum
+            checksum = calculate_checksum(output_path)
+            backup_data['checksum'] = checksum
+            
+            # Rewrite with checksum included
+            with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(backup_data, f, indent=2)
             
             logger.info(f"[OK] Backup saved to: {output_path}")
+            logger.info(f"[OK] Checksum (SHA256): {checksum[:16]}...")
             return stats
         
         except Exception as e:
@@ -287,19 +386,48 @@ class PlexLibraryBackup:
             auto_approve: If False (default), requests are created but NOT auto-approved
                          You must manually approve them in Overseerr before processing
         """
+        import gzip
+        
         try:
-            with open(backup_file, 'r') as f:
-                backup_data = json.load(f)
+            backup_path = Path(backup_file)
+            # Handle both .json and .json.gz files
+            if backup_path.suffix == '.gz' or str(backup_path).endswith('.json.gz'):
+                with gzip.open(backup_file, 'rt', encoding='utf-8') as f:
+                    backup_data = json.load(f)
+            else:
+                with open(backup_file, 'r', encoding='utf-8') as f:
+                    backup_data = json.load(f)
         except Exception as e:
             logger.error(f"Failed to load backup: {e}")
             return {}
+        
+        # Verify backup integrity if checksum exists
+        if 'checksum' in backup_data:
+            stored_checksum = backup_data['checksum']
+            # Remove checksum for verification
+            backup_copy = backup_data.copy()
+            del backup_copy['checksum']
+            
+            # Write temp file to verify
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as tmp:
+                json.dump(backup_copy, tmp, indent=2)
+                tmp_path = tmp.name
+            
+            calculated_checksum = calculate_checksum(tmp_path)
+            os.unlink(tmp_path)
+            
+            if calculated_checksum != stored_checksum:
+                logger.warning(f"Backup checksum mismatch! File may be corrupted.")
+                logger.warning(f"  Expected: {stored_checksum[:16]}...")
+                logger.warning(f"  Got:      {calculated_checksum[:16]}...")
         
         progress_data = {}
         if progress_file:
             progress_path = Path(progress_file)
             if progress_path.exists():
                 try:
-                    with open(progress_path, 'r') as f:
+                    with open(progress_path, 'r', encoding='utf-8') as f:
                         progress_data = json.load(f)
                     # Only use submitted items if they exist
                     if 'submitted' in progress_data:
@@ -311,6 +439,7 @@ class PlexLibraryBackup:
         
         overseerr_url = overseerr_url.rstrip('/')
         overseerr_session = requests.Session()
+        overseerr_session.trust_env = False
         overseerr_session.headers.update({
             'X-Api-Key': overseerr_token,
             'Content-Type': 'application/json'
@@ -320,6 +449,7 @@ class PlexLibraryBackup:
         logger.info(f"[OK] Configured Overseerr session for {overseerr_url}")
         
         plex_session = requests.Session()
+        plex_session.trust_env = False
         plex_session.headers.update({
             'X-Plex-Token': plex_token,
             'Accept': 'application/json'
@@ -364,7 +494,7 @@ class PlexLibraryBackup:
                     current_episodes = 0
                     try:
                         url = f'{plex_url}/library/metadata/{item["ratingKey"]}'
-                        response = plex_session.get(url, timeout=10)
+                        response = request_with_retry(plex_session, 'get', url, timeout=10)
                         if response.status_code == 200:
                             data = response.json()
                             metadata = data.get('MediaContainer', {}).get('Metadata', [])
@@ -409,13 +539,8 @@ class PlexLibraryBackup:
                     # Unknown type
                     stats['requests_skipped'] += 1
                     continue
-                item_id = f"{lib_name}:{item['ratingKey']}"
                 
-                if item_id in progress_data.get('submitted', {}):
-                    logger.debug(f"  [SKIP] '{item['title']}' (already submitted)")
-                    stats['requests_skipped'] += 1
-                    continue
-                
+                # Check batch limit
                 if batch_limit and requests_created_this_batch >= batch_limit:
                     logger.warning(f"\nBatch limit ({batch_limit}) reached!")
                     stats['batch_limit_reached'] = True
@@ -462,7 +587,8 @@ class PlexLibraryBackup:
                         stats['requests_skipped'] += 1
                         continue
                     
-                    response = overseerr_session.post(
+                    response = request_with_retry(
+                        overseerr_session, 'post',
                         f'{overseerr_url}/api/v1/request',
                         json=request_data
                     )
@@ -473,12 +599,14 @@ class PlexLibraryBackup:
                         
                         # Try with X-CSRF-Token header
                         retry_session = requests.Session()
+                        retry_session.trust_env = False
                         retry_session.headers.update(overseerr_session.headers)
                         retry_session.headers['X-CSRF-Token'] = 'none'
                         retry_session.headers['X-Requested-With'] = 'XMLHttpRequest'
                         retry_session.verify = False
                         
-                        response = retry_session.post(
+                        response = request_with_retry(
+                            retry_session, 'post',
                             f'{overseerr_url}/api/v1/request',
                             json=request_data
                         )
@@ -507,6 +635,9 @@ class PlexLibraryBackup:
                                 'type': item['type'],
                                 'submitted_at': datetime.now().isoformat()
                             }
+                        
+                        # Rate limiting delay
+                        time.sleep(OVERSEERR_DELAY)
                     else:
                         logger.warning(f"  Failed to submit '{item['title']}' - HTTP {response.status_code}")
                         stats['requests_skipped'] += 1
@@ -523,7 +654,7 @@ class PlexLibraryBackup:
             progress_path = Path(progress_file)
             progress_path.parent.mkdir(parents=True, exist_ok=True)
             try:
-                with open(progress_path, 'w') as f:
+                with open(progress_path, 'w', encoding='utf-8') as f:
                     json.dump(progress_data, f, indent=2)
                 logger.info(f"Progress saved to: {progress_file}")
             except Exception as e:
@@ -581,6 +712,8 @@ def main():
         logger.info("=" * 60)
         logger.info("Export Statistics:")
         logger.info(f"  Total items: {stats['total_items']}")
+        logger.info(f"  Movies: {stats['movies']}")
+        logger.info(f"  TV Shows: {stats['shows']}")
         logger.info(f"  Verified (files exist): {stats['verified_items']}")
         logger.info(f"  Missing files: {stats['missing_files']}")
         logger.info(f"  Errors: {stats['errors']}")
