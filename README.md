@@ -187,6 +187,17 @@ python plex_overseerr_backup.py \
   --overseerr-token YOUR_OVERSEERR_TOKEN
 ```
 
+**Force restore (when Overseerr ignores requests):**
+```bash
+python plex_overseerr_backup.py \
+  --plex-url http://localhost:32400 \
+  --plex-token YOUR_PLEX_TOKEN \
+  --import backups/plex_backup.json \
+  --overseerr-url http://localhost:5055 \
+  --overseerr-token YOUR_OVERSEERR_TOKEN \
+  --force
+```
+
 ## Backup Modes
 
 ### Standard Mode (Default)
@@ -259,6 +270,35 @@ Both `.json` and `.json.gz` files are supported for restore and review operation
 11. Click "Batch" again to continue with more files
 
 ## Important Limitations
+
+### Force Re-Request Mode
+
+If Overseerr ignores your restore requests because it thinks content already exists, use **Force Mode**:
+
+**Web UI:** Check "Force re-request (clear existing media data)" in the Restore tab
+
+**Command Line:**
+```bash
+python plex_overseerr_backup.py \
+  --plex-url http://localhost:32400 \
+  --plex-token YOUR_PLEX_TOKEN \
+  --import backups/plex_backup.json \
+  --overseerr-url http://localhost:5055 \
+  --overseerr-token YOUR_OVERSEERR_TOKEN \
+  --force
+```
+
+**What it does:**
+1. Looks up each item in Overseerr's database
+2. If Overseerr thinks it's "available", deletes that record
+3. Then submits the request normally
+
+**When to use:**
+- Overseerr's cache is stale and thinks files exist when they don't
+- You've already requested something before but files were deleted
+- Overseerr shows "Already Requested" for content you need
+
+**Note:** This clears request history for affected items. For disaster recovery, this is usually acceptable since you want the content re-downloaded anyway.
 
 ### Review Missing Now Dynamically Checks Files
 
@@ -430,10 +470,9 @@ This error from Overseerr means the seasons parameter is wrong. Make sure you're
 ### "Overseerr ignores restore requests"
 **Cause:** Overseerr cache doesn't know files are gone
 **Solution:**
-1. Open Overseerr → Settings → Integrations → Plex
-2. Click "Test Connection" or "Resync" 
-3. Wait for full sync to complete
-4. Try restore again
+1. First, try resyncing: Overseerr → Settings → Integrations → Plex → "Test Connection" or "Resync"
+2. If that doesn't work, use **Force Mode** in the Restore tab (or `--force` on command line)
+3. Force mode clears Overseerr's record of the media so it can be re-requested
 
 ### "Shows/movies appear in backup but not requested"
 **Cause:** File still exists on disk even though you thought it was deleted

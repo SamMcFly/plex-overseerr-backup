@@ -144,7 +144,21 @@ python ui.py
 ### Backup file is .json.gz - is that right?
 Yes! Backups are automatically compressed with gzip to save space (80-90% smaller). Both `.json` and `.json.gz` files work for restore and review.
 
+### Overseerr ignores restore requests
+If Overseerr says content already exists or ignores your requests:
+1. Try resyncing Overseerr with Plex first
+2. If that doesn't work, enable "Force re-request" in the Restore tab
+3. This clears Overseerr's record so content can be re-requested
+
 ## New Features
+
+### Force Re-Request Mode
+Force Overseerr to accept requests even if it thinks content exists:
+```bash
+python plex_overseerr_backup.py --import backup.json --force ...
+```
+
+Or check "Force re-request" in the web UI Restore tab.
 
 ### Detailed Episode Tracking
 Track individual TV episode files for precise restore:

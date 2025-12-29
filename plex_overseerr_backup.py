@@ -536,11 +536,88 @@ class PlexLibraryBackup:
             logger.error(f"Failed to save backup: {e}")
             return stats
 
+    def clear_overseerr_media(self, overseerr_session, overseerr_url: str, 
+                              media_type: str, tmdb_id: str, title: str) -> bool:
+        """
+        Clear media data from Overseerr to allow re-requesting.
+        
+        This is equivalent to clicking "Clear All Media Data" in the Overseerr UI.
+        It removes Overseerr's internal record of the media, allowing it to be requested again.
+        
+        Args:
+            overseerr_session: Requests session with auth headers
+            overseerr_url: Base URL for Overseerr
+            media_type: 'movie' or 'tv'
+            tmdb_id: TMDB ID of the media
+            title: Title for logging
+            
+        Returns:
+            True if cleared successfully or media didn't exist, False on error
+        """
+        try:
+            # First, look up the media to get Overseerr's internal mediaId
+            if media_type == 'movie':
+                lookup_url = f'{overseerr_url}/api/v1/movie/{tmdb_id}'
+            else:
+                lookup_url = f'{overseerr_url}/api/v1/tv/{tmdb_id}'
+            
+            response = request_with_retry(overseerr_session, 'get', lookup_url, timeout=15)
+            
+            if response.status_code == 404:
+                # Media not in Overseerr database - nothing to clear
+                logger.debug(f"    '{title}' not in Overseerr database (OK to request)")
+                return True
+            
+            if response.status_code != 200:
+                logger.warning(f"    Failed to look up '{title}' in Overseerr: HTTP {response.status_code}")
+                return False
+            
+            data = response.json()
+            media_info = data.get('mediaInfo')
+            
+            if not media_info:
+                # No media info means it's not tracked - OK to request
+                logger.debug(f"    '{title}' has no mediaInfo (OK to request)")
+                return True
+            
+            media_id = media_info.get('id')
+            status = media_info.get('status', 0)
+            
+            # Status codes: 1=UNKNOWN, 2=PENDING, 3=PROCESSING, 4=PARTIALLY_AVAILABLE, 5=AVAILABLE
+            status_names = {1: 'UNKNOWN', 2: 'PENDING', 3: 'PROCESSING', 4: 'PARTIALLY_AVAILABLE', 5: 'AVAILABLE'}
+            status_name = status_names.get(status, f'STATUS_{status}')
+            
+            if not media_id:
+                logger.debug(f"    '{title}' has no media ID (OK to request)")
+                return True
+            
+            logger.info(f"    Clearing '{title}' from Overseerr (status: {status_name}, mediaId: {media_id})")
+            
+            # Delete the media entry
+            delete_url = f'{overseerr_url}/api/v1/media/{media_id}'
+            delete_response = request_with_retry(overseerr_session, 'delete', delete_url, timeout=15)
+            
+            if delete_response.status_code in (200, 204):
+                logger.info(f"    [OK] Cleared '{title}' from Overseerr")
+                return True
+            else:
+                logger.warning(f"    Failed to clear '{title}': HTTP {delete_response.status_code}")
+                try:
+                    logger.debug(f"    Response: {delete_response.text[:200]}")
+                except:
+                    pass
+                return False
+                
+        except Exception as e:
+            logger.error(f"    Error clearing '{title}' from Overseerr: {e}")
+            return False
+
     def restore_to_overseerr(self, backup_file: str, overseerr_url: str, 
                             overseerr_token: str, plex_url: str, plex_token: str,
                             batch_limit: Optional[int] = None, 
                             progress_file: Optional[str] = None,
-                            auto_approve: bool = False) -> Dict:
+                            auto_approve: bool = False,
+                            force: bool = False) -> Dict:
         """
         Restore backup to Overseerr by creating requests for MISSING files only
         Re-verifies files exist before submitting to avoid false requests
@@ -548,6 +625,9 @@ class PlexLibraryBackup:
         Args:
             auto_approve: If False (default), requests are created but NOT auto-approved
                          You must manually approve them in Overseerr before processing
+            force: If True, clear existing media data from Overseerr before requesting.
+                   This allows re-requesting content that Overseerr thinks is already available.
+                   Useful when Overseerr's cache is stale or files were deleted.
         """
         import gzip
         
@@ -625,8 +705,12 @@ class PlexLibraryBackup:
             'already_exist': 0,
             'batch_limit_reached': False,
             'errors': 0,
-            're_verified_exist': 0
+            're_verified_exist': 0,
+            'force_cleared': 0
         }
+        
+        if force:
+            logger.info("Force mode enabled - will clear existing media data before requesting")
         
         logger.info("Restoring to Overseerr (only missing files)...")
         
@@ -749,15 +833,25 @@ class PlexLibraryBackup:
                     break
                 
                 try:
+                    # Get TMDB ID first (needed for both force clear and request)
+                    tmdb_id = item.get('tmdb_id')
+                    if not tmdb_id:
+                        logger.info(f"  [SKIP] '{item['title']}' (no TMDB ID in backup)")
+                        stats['requests_skipped'] += 1
+                        continue
+                    
+                    # Force clear existing media data if requested
+                    if force:
+                        media_type = 'movie' if item['type'] == 'movie' else 'tv'
+                        cleared = self.clear_overseerr_media(
+                            overseerr_session, overseerr_url,
+                            media_type, tmdb_id, item['title']
+                        )
+                        if cleared:
+                            stats['force_cleared'] += 1
+                        # Continue even if clear failed - the request might still work
+                    
                     if item['type'] == 'movie':
-                        # Use TMDB ID from backup (captured during export)
-                        tmdb_id = item.get('tmdb_id')
-                        
-                        if not tmdb_id:
-                            logger.info(f"  [SKIP] '{item['title']}' (no TMDB ID in backup)")
-                            stats['requests_skipped'] += 1
-                            continue
-                        
                         logger.info(f"  [SUB] Submitting '{item['title']}' (TMDB ID: {tmdb_id})")
                         
                         request_data = {
@@ -767,14 +861,6 @@ class PlexLibraryBackup:
                         }
                     
                     elif item['type'] == 'show':
-                        # For TV shows, use TMDB ID (not TVDB)
-                        tmdb_id = item.get('tmdb_id')
-                        
-                        if not tmdb_id:
-                            logger.info(f"  [SKIP] '{item['title']}' (no TMDB ID in backup)")
-                            stats['requests_skipped'] += 1
-                            continue
-                        
                         # Determine which seasons to request
                         if missing_seasons:
                             # Request specific missing seasons
@@ -899,6 +985,8 @@ def main():
                        help='Track progress across batches in this JSON file')
     parser.add_argument('--auto-approve', action='store_true',
                        help='Auto-approve requests (default: requests need manual approval)')
+    parser.add_argument('--force', action='store_true',
+                       help='Force re-request by clearing existing media data from Overseerr first')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose logging')
     
     args = parser.parse_args()
@@ -944,6 +1032,9 @@ def main():
             logger.error("--overseerr-url and --overseerr-token required for restore")
             sys.exit(1)
         
+        if args.force:
+            logger.info("Force mode enabled - existing media data will be cleared before requesting")
+        
         stats = plex.restore_to_overseerr(
             args.__dict__.get('import'),
             args.overseerr_url,
@@ -952,7 +1043,8 @@ def main():
             args.plex_token,
             batch_limit=args.batch_limit,
             progress_file=args.progress,
-            auto_approve=args.auto_approve
+            auto_approve=args.auto_approve,
+            force=args.force
         )
         
         
@@ -960,6 +1052,8 @@ def main():
         logger.info("Restore Statistics:")
         logger.info(f"  Total missing files: {stats['total_missing']}")
         logger.info(f"  Requests created: {stats['requests_created']}")
+        if stats.get('force_cleared', 0) > 0:
+            logger.info(f"  Force-cleared from Overseerr: {stats['force_cleared']}")
         logger.info(f"  Already exist locally: {stats['already_exist']}")
         logger.info(f"  Skipped (already submitted): {stats['requests_skipped']}")
         logger.info(f"  Errors: {stats['errors']}")
