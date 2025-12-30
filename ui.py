@@ -210,11 +210,18 @@ def last_backup():
         if not backup_dir.exists():
             return jsonify({'success': False, 'error': 'Backup directory does not exist'})
         
-        backups = sorted(backup_dir.glob('plex_library_*.json'), reverse=True)
-        if not backups:
+        # Find both .json and .json.gz backups
+        json_backups = list(backup_dir.glob('plex_library_*.json'))
+        gz_backups = list(backup_dir.glob('plex_library_*.json.gz'))
+        all_backups = json_backups + gz_backups
+        
+        # Sort by modification time, newest first
+        all_backups = sorted(all_backups, key=lambda f: f.stat().st_mtime, reverse=True)
+        
+        if not all_backups:
             return jsonify({'success': False, 'error': 'No backups found'})
         
-        latest = backups[0]
+        latest = all_backups[0]
         stat = latest.stat()
         size_kb = stat.st_size / 1024
         mtime = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')
