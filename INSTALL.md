@@ -59,13 +59,13 @@ Open browser to: **http://localhost:5000**
 4. Wait for "Backup complete" message
 5. Backup saved to `backups/` folder (compressed `.json.gz` by default)
 
-### 8. Test Restore (Optional)
+### 8. Test Review (Optional)
 
 To test without losing data:
-1. Click "Review Missing" tab
+1. Click "Review & Select" tab
 2. Select your backup file (`.json` or `.json.gz`)
-3. Click "Review Missing Files"
-4. You should see "Found 0 missing files" (since nothing is missing)
+3. Click "Load Missing Items"
+4. You should see "Found 0 missing items" (since nothing is missing)
 
 ## Common Commands
 
@@ -152,6 +152,16 @@ If Overseerr says content already exists or ignores your requests:
 
 ## New Features
 
+### Selective Restore (Review & Select)
+Choose exactly which items to restore instead of restoring everything:
+1. Go to "Review & Select" tab
+2. Load your backup file
+3. Uncheck any items you don't want (finished shows, intentionally deleted content)
+4. Use "Movies Only" or "Shows Only" for quick filtering
+5. Click "Restore Selected"
+
+This is useful when you've finished watching a series and don't want it re-downloaded, or when you intentionally deleted content to free up space.
+
 ### Force Re-Request Mode
 Force Overseerr to accept requests even if it thinks content exists:
 ```bash
@@ -200,10 +210,11 @@ Backups include SHA256 checksums. If a backup is corrupted, you'll see a warning
    - Wait for full sync to complete
 
 3. **Restore Using Pre-Disaster Backup**
-   - Open web UI → "Restore" tab
+   - Open web UI → "Review & Select" tab
    - Select your **backup file from before the disaster** (`.json` or `.json.gz`)
-   - Review what will be restored
-   - Click "Batch" to start restore
+   - Click "Load Missing Items"
+   - **Uncheck any items you don't want restored** (finished shows, etc.)
+   - Click "Restore Selected"
    - Monitor Overseerr for downloads
 
 **Why both steps matter:**

@@ -88,11 +88,13 @@ If it works, you'll see JSON output with user info.
 - `http://192.168.1.100:32400` (IP address)
 - `http://plex.local:32400` (local hostname)
 - `http://localhost:32400` (same machine)
+- `https://plex.yourdomain.com` (with SSL)
 
 **Overseerr:**
 - `http://192.168.1.100:5055` (IP address)
 - `http://overseerr.local:5055` (local hostname)
 - `http://localhost:5055` (same machine)
+- `https://overseerr.yourdomain.com` (with SSL)
 
 Include `http://` or `https://` at the start!
 

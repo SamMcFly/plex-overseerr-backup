@@ -18,6 +18,10 @@ except ImportError:
     print("Flask is required. Install with: pip install flask")
     sys.exit(1)
 
+# Suppress SSL warnings for self-signed certs
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 # Set up logging with unicode support
 logging.basicConfig(
@@ -27,7 +31,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-VERSION = "3.0"
+VERSION = "3.1"
 
 
 class Config:
@@ -73,7 +77,638 @@ config = Config()
 
 FAVICON_B64 = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAmUlEQVR42mNIq3uVVvM8veppeuXjjPKHGWX3MkvuZBbdyiq8kZV/NTvvcnbOxZys8zmZZ3LTT+WmnchLOZaXdDg/8WB+/P6CuL0FMbsKo3YURm4rCt9SFLaxOGR9cdDaksDVJf4rSv2WlfosYRi1YARb8J84MGoB8YAiC3BF8qgF9LOA5pE8mg9Gk+loPhitcEabLaMWUGoBAH+/pSbY2I7NAAAAAElFTkSuQmCC"
 
-HTML = """<!DOCTYPE html><html><head><title>Plex Backup & Overseerr Restore</title><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" type="image/png" href="data:image/png;base64,""" + FAVICON_B64 + """"><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px;}.container{max-width:1000px;margin:0 auto;}header{text-align:center;color:white;margin-bottom:30px;}header h1{font-size:2.5em;margin-bottom:5px;}header p{font-size:0.9em;opacity:0.9;margin-bottom:5px;}.card{background:white;border-radius:10px;padding:25px;margin-bottom:20px;box-shadow:0 10px 30px rgba(0,0,0,0.3);}.card h2{color:#667eea;margin-bottom:15px;font-size:1.5em;border-bottom:2px solid #667eea;padding-bottom:10px;}.card h3{color:#764ba2;margin-top:20px;margin-bottom:10px;font-size:1.1em;}.form-group{margin-bottom:15px;}label{display:block;margin-bottom:5px;color:#333;font-weight:500;}.help-text{font-size:0.85em;color:#666;margin-top:3px;font-style:italic;}.help-section{background:#f0f4ff;border-left:4px solid #667eea;padding:12px;margin:15px 0;border-radius:5px;font-size:0.9em;color:#333;}.warning-section{background:#fff3cd;border-left:4px solid #ffc107;padding:12px;margin:15px 0;border-radius:5px;font-size:0.9em;color:#856404;}input[type="text"],input[type="number"],textarea{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:1em;font-family:inherit;}input:focus,textarea:focus{outline:none;border-color:#667eea;box-shadow:0 0 0 3px rgba(102,126,234,0.1);}button{padding:12px 20px;border:none;border-radius:5px;font-size:1em;font-weight:600;cursor:pointer;margin-right:10px;background:#667eea;color:white;}button:hover{background:#5568d3;}.file-input-wrapper{position:relative;}.file-input-display{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;background:#f9f9f9;color:#666;cursor:pointer;display:block;text-align:center;}.output{background:#f5f5f5;border:1px solid #ddd;border-radius:5px;padding:15px;max-height:500px;overflow-y:auto;font-family:monospace;font-size:0.85em;white-space:pre-wrap;margin-top:15px;display:none;}.output.show{display:block;}.status{padding:15px;border-radius:5px;margin-top:15px;display:none;}.status.show{display:block;}.status-success{background:#c6f6d5;color:#22543d;border-left:4px solid #48bb78;}.status-error{background:#fed7d7;color:#742a2a;border-left:4px solid #f56565;}.status-info{background:#bee3f8;color:#2c5282;border-left:4px solid #667eea;}.status-text{display:flex;align-items:center;gap:10px;}.spinner{display:inline-block;width:16px;height:16px;border:3px solid rgba(102,126,234,0.2);border-radius:50%;border-top-color:#667eea;animation:spin 0.8s linear infinite;}@keyframes spin{to{transform:rotate(360deg);}}.info{background:#edf2f7;border-left:4px solid #667eea;padding:15px;border-radius:5px;margin-bottom:15px;color:#2d3748;}.tabs{display:flex;gap:5px;margin-bottom:20px;border-bottom:2px solid #eee;flex-wrap:wrap;}.tab{padding:12px 15px;cursor:pointer;border:none;background:none;color:#666;border-bottom:3px solid transparent;font-weight:600;transition:all 0.2s;}.tab:hover{color:#667eea;}.tab.active{color:#667eea;border-bottom-color:#667eea;}.tab-content{display:none;}.tab-content.active{display:block;}.last-backup{background:#e8f5e9;border-left:4px solid #4caf50;padding:12px;margin:15px 0;border-radius:5px;font-size:0.9em;color:#2e7d32;}</style></head><body><div class="container"><header><h1>Plex Backup & Overseerr Restore</h1><p>Disaster recovery tool for Plex media libraries</p><p>v""" + VERSION + """</p></header><div class="card"><h2>Setup</h2><div class="help-section"><strong>First Time Setup:</strong> Enter your Plex and Overseerr server details below, then click Test to verify the connection works.</div><div class="warning-section"><strong>⚠️ Security Notice:</strong> API tokens are stored in plain text in config.json. Keep this file secure and do not share it.</div><h3>Plex Server</h3><div class="form-group"><label>Plex Server URL<span class="help-text">e.g., http://localhost:32400 or http://192.168.1.100:32400</span></label><input type="text" id="plexUrl" placeholder="http://localhost:32400"></div><div class="form-group"><label>Plex API Token<span class="help-text">Find this in Plex settings > Remote Access or get from account page</span></label><input type="text" id="plexToken"></div><h3>Overseerr Server</h3><div class="form-group"><label>Overseerr Server URL<span class="help-text">e.g., http://localhost:5055</span></label><input type="text" id="overseerrUrl" placeholder="http://localhost:5055"></div><div class="form-group"><label>Overseerr API Token<span class="help-text">Generate in Overseerr > Settings > API Keys</span></label><input type="text" id="overseerrToken"></div><h3>Radarr Server (Optional - for Force Mode)</h3><div class="form-group"><label>Radarr Server URL<span class="help-text">e.g., http://localhost:7878</span></label><input type="text" id="radarrUrl" placeholder="http://localhost:7878"></div><div class="form-group"><label>Radarr API Token<span class="help-text">Settings > General > API Key</span></label><input type="text" id="radarrToken"></div><h3>Sonarr Server (Optional - for Force Mode)</h3><div class="form-group"><label>Sonarr Server URL<span class="help-text">e.g., http://localhost:8989</span></label><input type="text" id="sonarrUrl" placeholder="http://localhost:8989"></div><div class="form-group"><label>Sonarr API Token<span class="help-text">Settings > General > API Key</span></label><input type="text" id="sonarrToken"></div><h3>Backup Storage</h3><div class="form-group"><label>Backup Directory<span class="help-text">Where to save backup JSON files (creates if doesn't exist)</span></label><input type="text" id="backupDir" value="./backups"></div><button onclick="saveSettings()">Save Settings</button><button onclick="testConnection()">Test Connection</button><div id="settingsStatus" class="status"></div></div><div class="card"><div class="tabs"><button class="tab active" onclick="switchTab('backup')">Backup</button><button class="tab" onclick="switchTab('review')">Review Missing</button><button class="tab" onclick="switchTab('restore')">Restore</button></div><div id="backup" class="tab-content active"><h2>Create Backup</h2><div class="info">Backs up your Plex library metadata to a JSON file. Optionally verifies that all files still exist on disk.</div><div id="lastBackupInfo" class="last-backup" style="display:none;"></div><div class="help-section"><strong>What happens:</strong> Creates a JSON backup file containing your library metadata. If "Verify files" is checked, it also confirms each file exists on your storage.</div><div class="form-group"><label>Libraries to backup (optional)<span class="help-text">Leave blank to backup all libraries. Enter one library name per line to backup specific libraries only.</span></label><textarea id="libraries" placeholder="Movies&#10;TV Shows" rows="4"></textarea></div><div class="form-group"><label><input type="checkbox" id="verify" checked> Verify files exist on disk</label><span class="help-text">Slower but ensures accurate file status</span></div><div class="form-group"><label><input type="checkbox" id="detailedEpisodes"> Detailed episode tracking (TV shows)</label><span class="help-text">Tracks individual episode files - much slower but enables per-episode and per-season restore</span></div><div class="form-group"><label><input type="checkbox" id="compressBackup" checked> Compress backup (gzip)</label><span class="help-text">Reduces file size by 80-90%. Creates .json.gz file instead of .json</span></div><button id="backupBtn" onclick="startBackup()">Create Backup</button><div id="backupOutput" class="output"></div><div id="backupStatus" class="status"></div></div><div id="review" class="tab-content"><h2>Review Missing Files</h2><div class="info">Shows which files are missing from your library based on a backup.</div><div class="help-section"><strong>Use this to:</strong> See what files were missing at the time the backup was created, organized by library.</div><div class="form-group"><label>Select Backup File</label><div class="file-input-wrapper"><label class="file-input-display" for="reviewFilePicker">Click to select backup JSON file...</label><input type="file" id="reviewFilePicker" accept=".json,.json.gz,.gz" onchange="selectReviewFile(this)" style="display:none;"></div></div><input type="text" id="reviewFile" placeholder="Selected file" style="margin-top:10px;" readonly><button id="reviewBtn" onclick="reviewMissing()">Review Missing Files</button><div id="reviewOutput" class="output"></div><div id="reviewStatus" class="status"></div></div><div id="restore" class="tab-content"><h2>Restore Missing Files</h2><div class="info">Creates requests in Overseerr for files that are missing from your Plex library.</div><div class="help-section"><strong>How it works:</strong> Compares current Plex library to backup and submits Overseerr requests for missing items. You then approve them in Overseerr and they download automatically.</div><div class="form-group"><label>Select Backup File</label><div class="file-input-wrapper"><label class="file-input-display" for="restoreFilePicker">Click to select backup JSON file...</label><input type="file" id="restoreFilePicker" accept=".json,.json.gz,.gz" onchange="selectRestoreFile(this)" style="display:none;"></div></div><input type="text" id="restoreFile" placeholder="Selected file" style="margin-top:10px;" readonly><div class="form-group"><label>Batch Size<span class="help-text">How many requests to create per batch. Use smaller sizes to avoid overloading Overseerr.</span></label><input type="number" id="batchSize" value="10" min="1"></div><div class="form-group"><label><input type="checkbox" id="forceRequest"> Force re-request (clear existing media data)</label><span class="help-text">Use when Overseerr/Radarr/Sonarr think files exist but they don't. Clears their records so items can be re-requested.</span></div><div class="help-section"><strong>Batch Mode:</strong> Creates limited requests and tracks progress. Click Batch again to create more.<br/><strong>Full Mode:</strong> Creates all missing requests at once. Use with caution.<br/><strong>Force Mode:</strong> Enable to clear entries from Overseerr, Radarr, and Sonarr (if configured) before requesting.</div><button id="restoreBatchBtn" onclick="startRestoreBatch()">Batch (Limited)</button><button id="restoreFullBtn" onclick="startRestoreFull()">Full (All at Once)</button><div id="restoreOutput" class="output"></div><div id="restoreStatus" class="status"></div></div></div></div></body><script>document.addEventListener('DOMContentLoaded',function(){loadSettings();loadLastBackupInfo();});function switchTab(n){document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));document.getElementById(n).classList.add('active');event.target.classList.add('active');}function loadSettings(){fetch('/api/settings').then(r=>r.json()).then(d=>{document.getElementById('plexUrl').value=d.plex_url||'';document.getElementById('plexToken').value=d.plex_token||'';document.getElementById('overseerrUrl').value=d.overseerr_url||'';document.getElementById('overseerrToken').value=d.overseerr_token||'';document.getElementById('radarrUrl').value=d.radarr_url||'';document.getElementById('radarrToken').value=d.radarr_token||'';document.getElementById('sonarrUrl').value=d.sonarr_url||'';document.getElementById('sonarrToken').value=d.sonarr_token||'';document.getElementById('backupDir').value=d.backup_dir||'./backups';});}function loadLastBackupInfo(){fetch('/api/last-backup').then(r=>r.json()).then(d=>{if(d.success&&d.last_backup){const el=document.getElementById('lastBackupInfo');el.innerHTML='<strong>Last backup:</strong> '+d.last_backup.name+' ('+d.last_backup.date+', '+d.last_backup.size+')';el.style.display='block';}});}function saveSettings(){const s={plex_url:document.getElementById('plexUrl').value,plex_token:document.getElementById('plexToken').value,overseerr_url:document.getElementById('overseerrUrl').value,overseerr_token:document.getElementById('overseerrToken').value,radarr_url:document.getElementById('radarrUrl').value,radarr_token:document.getElementById('radarrToken').value,sonarr_url:document.getElementById('sonarrUrl').value,sonarr_token:document.getElementById('sonarrToken').value,backup_dir:document.getElementById('backupDir').value};fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s)}).then(r=>r.json()).then(d=>showStatus('settingsStatus','Settings saved! (Note: Tokens stored in plain text)','success'));}function testConnection(){showStatus('settingsStatus','Testing connections...','info');fetch('/api/test-connection').then(r=>r.json()).then(d=>showStatus('settingsStatus',d.success?(d.message||'Connection OK!'):'Failed: '+d.error,d.success?'success':'error'));}function selectReviewFile(input){if(input.files&&input.files[0]){const file=input.files[0];const path=file.webkitRelativePath||file.name;document.getElementById('reviewFile').value=path;}}function selectRestoreFile(input){if(input.files&&input.files[0]){const file=input.files[0];const path=file.webkitRelativePath||file.name;document.getElementById('restoreFile').value=path;}}function startBackup(){const b=document.getElementById('backupDir').value,v=document.getElementById('verify').checked,d=document.getElementById('detailedEpisodes').checked,c=document.getElementById('compressBackup').checked,t=document.getElementById('libraries').value.split(String.fromCharCode(10)).map(x=>x.trim()).filter(x=>x);document.getElementById('backupBtn').disabled=true;showOutput('backupOutput');showStatusLoading('backupStatus',d?'Scanning Plex library with detailed episode tracking (this may take a while)...':'Scanning Plex library...');fetch('/api/backup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backup_dir:b,verify_files:v,detailed_episodes:d,compress:c,libraries:t})}).then(r=>r.json()).then(d=>{document.getElementById('backupOutput').textContent=d.output||'No output';showStatus('backupStatus',d.success?'Backup complete: '+d.file:'Failed: '+d.error,d.success?'success':'error');loadLastBackupInfo();}).catch(e=>showStatus('backupStatus','Error: '+e,'error')).finally(()=>{document.getElementById('backupBtn').disabled=false;});}function reviewMissing(){const f=document.getElementById('reviewFile').value;if(!f){showStatus('reviewStatus','Please select a backup file','error');return;}document.getElementById('reviewBtn').disabled=true;showOutput('reviewOutput');showStatusLoading('reviewStatus','Analyzing backup...');fetch('/api/review-missing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backup_file:f})}).then(r=>r.json()).then(d=>{document.getElementById('reviewOutput').textContent=d.output||'No output';showStatus('reviewStatus',d.success?'Found '+d.total+' missing files':'Failed: '+d.error,d.success?'success':'error');}).catch(e=>showStatus('reviewStatus','Error','error')).finally(()=>{document.getElementById('reviewBtn').disabled=false;});}function startRestoreBatch(){const b=document.getElementById('restoreFile').value,s=parseInt(document.getElementById('batchSize').value),f=document.getElementById('forceRequest').checked;if(!b){showStatus('restoreStatus','Please select a backup file','error');return;}document.getElementById('restoreBatchBtn').disabled=true;showOutput('restoreOutput');showStatusLoading('restoreStatus',f?'Creating requests with force mode (batch size: '+s+')...':'Creating requests (batch size: '+s+')...');fetch('/api/restore-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backup_file:b,batch_limit:s,force:f})}).then(r=>r.json()).then(d=>{document.getElementById('restoreOutput').textContent=d.output||'No output';showStatus('restoreStatus',d.success?'Batch complete - check Overseerr for new requests':'Failed: '+d.error,d.success?'success':'error');}).catch(e=>showStatus('restoreStatus','Error','error')).finally(()=>{document.getElementById('restoreBatchBtn').disabled=false;});}function startRestoreFull(){const b=document.getElementById('restoreFile').value,s=parseInt(document.getElementById('batchSize').value),f=document.getElementById('forceRequest').checked;if(!b){showStatus('restoreStatus','Please select a backup file','error');return;}if(!confirm('Create requests for ALL missing items?'+(f?' Force mode will clear existing media data.':'')+' This may create many requests in Overseerr.')){return;}document.getElementById('restoreFullBtn').disabled=true;showOutput('restoreOutput');showStatusLoading('restoreStatus',f?'Creating all requests with force mode...':'Creating all requests...');fetch('/api/restore-full',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backup_file:b,batch_limit:s,force:f})}).then(r=>r.json()).then(d=>{document.getElementById('restoreOutput').textContent=d.output||'No output';showStatus('restoreStatus',d.success?'All requests created - check Overseerr':'Failed: '+d.error,d.success?'success':'error');}).catch(e=>showStatus('restoreStatus','Error','error')).finally(()=>{document.getElementById('restoreFullBtn').disabled=false;});}function showStatus(e,m,t){const el=document.getElementById(e);el.innerHTML='<div class="status-text">'+m+'</div>';el.className='status show status-'+t;}function showStatusLoading(e,m){const el=document.getElementById(e);el.innerHTML='<div class="status-text"><span class="spinner"></span> '+m+'</div>';el.className='status show status-info';}function showOutput(e){document.getElementById(e).classList.add('show');}</script></html>"""
+HTML = """<!DOCTYPE html>
+<html>
+<head>
+<title>Plex Backup & Overseerr Restore</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="data:image/png;base64,""" + FAVICON_B64 + """">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px;}
+.container{max-width:1000px;margin:0 auto;}
+header{text-align:center;color:white;margin-bottom:30px;}
+header h1{font-size:2.5em;margin-bottom:5px;}
+header p{font-size:0.9em;opacity:0.9;margin-bottom:5px;}
+.card{background:white;border-radius:10px;padding:25px;margin-bottom:20px;box-shadow:0 10px 30px rgba(0,0,0,0.3);}
+.card h2{color:#667eea;margin-bottom:15px;font-size:1.5em;border-bottom:2px solid #667eea;padding-bottom:10px;}
+.card h3{color:#764ba2;margin-top:20px;margin-bottom:10px;font-size:1.1em;}
+.form-group{margin-bottom:15px;}
+label{display:block;margin-bottom:5px;color:#333;font-weight:500;}
+.help-text{font-size:0.85em;color:#666;margin-top:3px;font-style:italic;}
+.help-section{background:#f0f4ff;border-left:4px solid #667eea;padding:12px;margin:15px 0;border-radius:5px;font-size:0.9em;color:#333;}
+.warning-section{background:#fff3cd;border-left:4px solid #ffc107;padding:12px;margin:15px 0;border-radius:5px;font-size:0.9em;color:#856404;}
+input[type="text"],input[type="number"],textarea{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:1em;font-family:inherit;}
+input:focus,textarea:focus{outline:none;border-color:#667eea;box-shadow:0 0 0 3px rgba(102,126,234,0.1);}
+button{padding:12px 20px;border:none;border-radius:5px;font-size:1em;font-weight:600;cursor:pointer;margin-right:10px;background:#667eea;color:white;}
+button:hover{background:#5568d3;}
+button:disabled{background:#ccc;cursor:not-allowed;}
+button.secondary{background:#6c757d;}
+button.secondary:hover{background:#5a6268;}
+button.success{background:#48bb78;}
+button.success:hover{background:#38a169;}
+.file-input-wrapper{position:relative;}
+.file-input-display{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;background:#f9f9f9;color:#666;cursor:pointer;display:block;text-align:center;}
+.output{background:#f5f5f5;border:1px solid #ddd;border-radius:5px;padding:15px;max-height:500px;overflow-y:auto;font-family:monospace;font-size:0.85em;white-space:pre-wrap;margin-top:15px;display:none;}
+.output.show{display:block;}
+.status{padding:15px;border-radius:5px;margin-top:15px;display:none;}
+.status.show{display:block;}
+.status-success{background:#c6f6d5;color:#22543d;border-left:4px solid #48bb78;}
+.status-error{background:#fed7d7;color:#742a2a;border-left:4px solid #f56565;}
+.status-info{background:#bee3f8;color:#2c5282;border-left:4px solid #667eea;}
+.status-text{display:flex;align-items:center;gap:10px;}
+.spinner{display:inline-block;width:16px;height:16px;border:3px solid rgba(102,126,234,0.2);border-radius:50%;border-top-color:#667eea;animation:spin 0.8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.info{background:#edf2f7;border-left:4px solid #667eea;padding:15px;border-radius:5px;margin-bottom:15px;color:#2d3748;}
+.tabs{display:flex;gap:5px;margin-bottom:20px;border-bottom:2px solid #eee;flex-wrap:wrap;}
+.tab{padding:12px 15px;cursor:pointer;border:none;background:none;color:#666;border-bottom:3px solid transparent;font-weight:600;transition:all 0.2s;}
+.tab:hover{color:#667eea;}
+.tab.active{color:#667eea;border-bottom-color:#667eea;}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+.last-backup{background:#e8f5e9;border-left:4px solid #4caf50;padding:12px;margin:15px 0;border-radius:5px;font-size:0.9em;color:#2e7d32;}
+
+/* Selective restore styles */
+.missing-list{max-height:400px;overflow-y:auto;border:1px solid #ddd;border-radius:5px;margin:15px 0;}
+.missing-library{border-bottom:1px solid #eee;}
+.missing-library:last-child{border-bottom:none;}
+.library-header{background:#f8f9fa;padding:10px 15px;font-weight:600;color:#667eea;cursor:pointer;display:flex;align-items:center;gap:10px;}
+.library-header:hover{background:#e9ecef;}
+.library-header input[type="checkbox"]{width:18px;height:18px;cursor:pointer;}
+.library-items{padding:0;display:none;}
+.library-items.show{display:block;}
+.missing-item{padding:10px 15px 10px 40px;border-top:1px solid #f0f0f0;display:flex;align-items:flex-start;gap:10px;}
+.missing-item:hover{background:#fafafa;}
+.missing-item input[type="checkbox"]{width:16px;height:16px;margin-top:3px;cursor:pointer;flex-shrink:0;}
+.missing-item-info{flex:1;}
+.missing-item-title{font-weight:500;color:#333;}
+.missing-item-meta{font-size:0.85em;color:#666;margin-top:2px;}
+.missing-item-type{display:inline-block;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600;text-transform:uppercase;margin-right:5px;}
+.missing-item-type.movie{background:#e3f2fd;color:#1565c0;}
+.missing-item-type.show{background:#f3e5f5;color:#7b1fa2;}
+.selection-controls{display:flex;gap:10px;align-items:center;margin:15px 0;flex-wrap:wrap;}
+.selection-count{color:#666;font-size:0.9em;}
+.expand-collapse{font-size:0.85em;color:#667eea;cursor:pointer;margin-left:auto;}
+.expand-collapse:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+<h1>Plex Backup & Overseerr Restore</h1>
+<p>Disaster recovery tool for Plex media libraries</p>
+<p>v""" + VERSION + """</p>
+</header>
+
+<div class="card">
+<h2>Setup</h2>
+<div class="help-section"><strong>First Time Setup:</strong> Enter your Plex and Overseerr server details below, then click Test to verify the connection works.</div>
+<div class="warning-section"><strong>⚠️ Security Notice:</strong> API tokens are stored in plain text in config.json. Keep this file secure and do not share it.</div>
+
+<h3>Plex Server</h3>
+<div class="form-group">
+<label>Plex Server URL<span class="help-text">e.g., http://localhost:32400 or http://192.168.1.100:32400</span></label>
+<input type="text" id="plexUrl" placeholder="http://localhost:32400">
+</div>
+<div class="form-group">
+<label>Plex API Token<span class="help-text">Find this in Plex settings > Remote Access or get from account page</span></label>
+<input type="text" id="plexToken">
+</div>
+
+<h3>Overseerr Server</h3>
+<div class="form-group">
+<label>Overseerr Server URL<span class="help-text">e.g., http://localhost:5055</span></label>
+<input type="text" id="overseerrUrl" placeholder="http://localhost:5055">
+</div>
+<div class="form-group">
+<label>Overseerr API Token<span class="help-text">Generate in Overseerr > Settings > API Keys</span></label>
+<input type="text" id="overseerrToken">
+</div>
+
+<h3>Radarr Server (Optional - for Force Mode)</h3>
+<div class="form-group">
+<label>Radarr Server URL<span class="help-text">e.g., http://localhost:7878</span></label>
+<input type="text" id="radarrUrl" placeholder="http://localhost:7878">
+</div>
+<div class="form-group">
+<label>Radarr API Token<span class="help-text">Settings > General > API Key</span></label>
+<input type="text" id="radarrToken">
+</div>
+
+<h3>Sonarr Server (Optional - for Force Mode)</h3>
+<div class="form-group">
+<label>Sonarr Server URL<span class="help-text">e.g., http://localhost:8989</span></label>
+<input type="text" id="sonarrUrl" placeholder="http://localhost:8989">
+</div>
+<div class="form-group">
+<label>Sonarr API Token<span class="help-text">Settings > General > API Key</span></label>
+<input type="text" id="sonarrToken">
+</div>
+
+<h3>Backup Storage</h3>
+<div class="form-group">
+<label>Backup Directory<span class="help-text">Where to save backup JSON files (creates if doesn't exist)</span></label>
+<input type="text" id="backupDir" value="./backups">
+</div>
+
+<button onclick="saveSettings()">Save Settings</button>
+<button onclick="testConnection()">Test Connection</button>
+<div id="settingsStatus" class="status"></div>
+</div>
+
+<div class="card">
+<div class="tabs">
+<button class="tab active" onclick="switchTab('backup')">Backup</button>
+<button class="tab" onclick="switchTab('review')">Review & Select</button>
+<button class="tab" onclick="switchTab('restore')">Restore (All)</button>
+</div>
+
+<div id="backup" class="tab-content active">
+<h2>Create Backup</h2>
+<div class="info">Backs up your Plex library metadata to a JSON file. Optionally verifies that all files still exist on disk.</div>
+<div id="lastBackupInfo" class="last-backup" style="display:none;"></div>
+<div class="help-section"><strong>What happens:</strong> Creates a JSON backup file containing your library metadata. If "Verify files" is checked, it also confirms each file exists on your storage.</div>
+
+<div class="form-group">
+<label>Libraries to backup (optional)<span class="help-text">Leave blank to backup all libraries. Enter one library name per line to backup specific libraries only.</span></label>
+<textarea id="libraries" placeholder="Movies&#10;TV Shows" rows="4"></textarea>
+</div>
+<div class="form-group">
+<label><input type="checkbox" id="verify" checked> Verify files exist on disk</label>
+<span class="help-text">Slower but ensures accurate file status</span>
+</div>
+<div class="form-group">
+<label><input type="checkbox" id="detailedEpisodes"> Detailed episode tracking (TV shows)</label>
+<span class="help-text">Tracks individual episode files - much slower but enables per-episode and per-season restore</span>
+</div>
+<div class="form-group">
+<label><input type="checkbox" id="compressBackup" checked> Compress backup (gzip)</label>
+<span class="help-text">Reduces file size by 80-90%. Creates .json.gz file instead of .json</span>
+</div>
+
+<button id="backupBtn" onclick="startBackup()">Create Backup</button>
+<div id="backupOutput" class="output"></div>
+<div id="backupStatus" class="status"></div>
+</div>
+
+<div id="review" class="tab-content">
+<h2>Review & Select Missing Files</h2>
+<div class="info">Review missing files and select which ones to restore. Uncheck items you don't want to re-download (e.g., shows you've finished watching).</div>
+<div class="help-section"><strong>How to use:</strong> Load a backup, review the missing items, uncheck anything you don't want, then click "Restore Selected" to submit requests to Overseerr.</div>
+
+<div class="form-group">
+<label>Select Backup File</label>
+<div class="file-input-wrapper">
+<label class="file-input-display" for="reviewFilePicker">Click to select backup JSON file...</label>
+<input type="file" id="reviewFilePicker" accept=".json,.json.gz,.gz" onchange="selectReviewFile(this)" style="display:none;">
+</div>
+</div>
+<input type="text" id="reviewFile" placeholder="Selected file" style="margin-top:10px;" readonly>
+<button id="reviewBtn" onclick="loadMissingItems()">Load Missing Items</button>
+
+<div id="selectionControls" class="selection-controls" style="display:none;">
+<button class="secondary" onclick="selectAll()">Select All</button>
+<button class="secondary" onclick="selectNone()">Select None</button>
+<button class="secondary" onclick="selectMovies()">Movies Only</button>
+<button class="secondary" onclick="selectShows()">Shows Only</button>
+<span class="selection-count" id="selectionCount">0 selected</span>
+<span class="expand-collapse" onclick="toggleAllLibraries()">Expand/Collapse All</span>
+</div>
+
+<div id="missingList" class="missing-list" style="display:none;"></div>
+
+<div id="restoreSelectedControls" style="display:none;margin-top:15px;">
+<div class="form-group">
+<label><input type="checkbox" id="reviewForceRequest"> Force re-request (clear existing media data)</label>
+<span class="help-text">Use when Overseerr/Radarr/Sonarr think files exist but they don't.</span>
+</div>
+<button id="restoreSelectedBtn" class="success" onclick="restoreSelected()">Restore Selected</button>
+</div>
+
+<div id="reviewOutput" class="output"></div>
+<div id="reviewStatus" class="status"></div>
+</div>
+
+<div id="restore" class="tab-content">
+<h2>Restore All Missing Files</h2>
+<div class="info">Creates requests in Overseerr for ALL files that are missing from your Plex library. Use "Review & Select" tab if you want to choose specific items.</div>
+<div class="help-section"><strong>How it works:</strong> Compares current Plex library to backup and submits Overseerr requests for missing items. You then approve them in Overseerr and they download automatically.</div>
+
+<div class="form-group">
+<label>Select Backup File</label>
+<div class="file-input-wrapper">
+<label class="file-input-display" for="restoreFilePicker">Click to select backup JSON file...</label>
+<input type="file" id="restoreFilePicker" accept=".json,.json.gz,.gz" onchange="selectRestoreFile(this)" style="display:none;">
+</div>
+</div>
+<input type="text" id="restoreFile" placeholder="Selected file" style="margin-top:10px;" readonly>
+
+<div class="form-group">
+<label>Batch Size<span class="help-text">How many requests to create per batch. Use smaller sizes to avoid overloading Overseerr.</span></label>
+<input type="number" id="batchSize" value="10" min="1">
+</div>
+
+<div class="form-group">
+<label><input type="checkbox" id="forceRequest"> Force re-request (clear existing media data)</label>
+<span class="help-text">Use when Overseerr/Radarr/Sonarr think files exist but they don't. Clears their records so items can be re-requested.</span>
+</div>
+
+<div class="help-section">
+<strong>Batch Mode:</strong> Creates limited requests and tracks progress. Click Batch again to create more.<br/>
+<strong>Full Mode:</strong> Creates all missing requests at once. Use with caution.<br/>
+<strong>Force Mode:</strong> Enable to clear entries from Overseerr, Radarr, and Sonarr (if configured) before requesting.
+</div>
+
+<button id="restoreBatchBtn" onclick="startRestoreBatch()">Batch (Limited)</button>
+<button id="restoreFullBtn" onclick="startRestoreFull()">Full (All at Once)</button>
+<div id="restoreOutput" class="output"></div>
+<div id="restoreStatus" class="status"></div>
+</div>
+
+</div>
+</div>
+
+<script>
+// Global state for missing items
+let missingItemsData = [];
+let currentBackupFile = '';
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadSettings();
+    loadLastBackupInfo();
+});
+
+function switchTab(n) {
+    document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(e => e.classList.remove('active'));
+    document.getElementById(n).classList.add('active');
+    event.target.classList.add('active');
+}
+
+function loadSettings() {
+    fetch('/api/settings').then(r => r.json()).then(d => {
+        document.getElementById('plexUrl').value = d.plex_url || '';
+        document.getElementById('plexToken').value = d.plex_token || '';
+        document.getElementById('overseerrUrl').value = d.overseerr_url || '';
+        document.getElementById('overseerrToken').value = d.overseerr_token || '';
+        document.getElementById('radarrUrl').value = d.radarr_url || '';
+        document.getElementById('radarrToken').value = d.radarr_token || '';
+        document.getElementById('sonarrUrl').value = d.sonarr_url || '';
+        document.getElementById('sonarrToken').value = d.sonarr_token || '';
+        document.getElementById('backupDir').value = d.backup_dir || './backups';
+    });
+}
+
+function loadLastBackupInfo() {
+    fetch('/api/last-backup').then(r => r.json()).then(d => {
+        if (d.success && d.last_backup) {
+            const el = document.getElementById('lastBackupInfo');
+            el.innerHTML = '<strong>Last backup:</strong> ' + d.last_backup.name + ' (' + d.last_backup.date + ', ' + d.last_backup.size + ')';
+            el.style.display = 'block';
+        }
+    });
+}
+
+function saveSettings() {
+    const s = {
+        plex_url: document.getElementById('plexUrl').value,
+        plex_token: document.getElementById('plexToken').value,
+        overseerr_url: document.getElementById('overseerrUrl').value,
+        overseerr_token: document.getElementById('overseerrToken').value,
+        radarr_url: document.getElementById('radarrUrl').value,
+        radarr_token: document.getElementById('radarrToken').value,
+        sonarr_url: document.getElementById('sonarrUrl').value,
+        sonarr_token: document.getElementById('sonarrToken').value,
+        backup_dir: document.getElementById('backupDir').value
+    };
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(s)
+    }).then(r => r.json()).then(d => showStatus('settingsStatus', 'Settings saved! (Note: Tokens stored in plain text)', 'success'));
+}
+
+function testConnection() {
+    showStatus('settingsStatus', 'Testing connections...', 'info');
+    fetch('/api/test-connection').then(r => r.json()).then(d => 
+        showStatus('settingsStatus', d.success ? (d.message || 'Connection OK!') : 'Failed: ' + d.error, d.success ? 'success' : 'error')
+    );
+}
+
+function selectReviewFile(input) {
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        const path = file.webkitRelativePath || file.name;
+        document.getElementById('reviewFile').value = path;
+        // Reset the list when a new file is selected
+        document.getElementById('missingList').style.display = 'none';
+        document.getElementById('selectionControls').style.display = 'none';
+        document.getElementById('restoreSelectedControls').style.display = 'none';
+        missingItemsData = [];
+    }
+}
+
+function selectRestoreFile(input) {
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        const path = file.webkitRelativePath || file.name;
+        document.getElementById('restoreFile').value = path;
+    }
+}
+
+function startBackup() {
+    const b = document.getElementById('backupDir').value,
+          v = document.getElementById('verify').checked,
+          d = document.getElementById('detailedEpisodes').checked,
+          c = document.getElementById('compressBackup').checked,
+          t = document.getElementById('libraries').value.split(String.fromCharCode(10)).map(x => x.trim()).filter(x => x);
+    
+    document.getElementById('backupBtn').disabled = true;
+    showOutput('backupOutput');
+    showStatusLoading('backupStatus', d ? 'Scanning Plex library with detailed episode tracking (this may take a while)...' : 'Scanning Plex library...');
+    
+    fetch('/api/backup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({backup_dir: b, verify_files: v, detailed_episodes: d, compress: c, libraries: t})
+    }).then(r => r.json()).then(d => {
+        document.getElementById('backupOutput').textContent = d.output || 'No output';
+        showStatus('backupStatus', d.success ? 'Backup complete: ' + d.file : 'Failed: ' + d.error, d.success ? 'success' : 'error');
+        loadLastBackupInfo();
+    }).catch(e => showStatus('backupStatus', 'Error: ' + e, 'error'))
+    .finally(() => { document.getElementById('backupBtn').disabled = false; });
+}
+
+function loadMissingItems() {
+    const f = document.getElementById('reviewFile').value;
+    if (!f) {
+        showStatus('reviewStatus', 'Please select a backup file', 'error');
+        return;
+    }
+    
+    currentBackupFile = f;
+    document.getElementById('reviewBtn').disabled = true;
+    showStatusLoading('reviewStatus', 'Analyzing backup...');
+    
+    fetch('/api/get-missing-items', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({backup_file: f})
+    }).then(r => r.json()).then(d => {
+        if (d.success) {
+            missingItemsData = d.items;
+            renderMissingList(d.items, d.by_library);
+            document.getElementById('selectionControls').style.display = 'flex';
+            document.getElementById('missingList').style.display = 'block';
+            document.getElementById('restoreSelectedControls').style.display = 'block';
+            updateSelectionCount();
+            showStatus('reviewStatus', 'Found ' + d.total + ' missing items. Select which ones to restore.', 'success');
+        } else {
+            showStatus('reviewStatus', 'Failed: ' + d.error, 'error');
+        }
+    }).catch(e => showStatus('reviewStatus', 'Error: ' + e, 'error'))
+    .finally(() => { document.getElementById('reviewBtn').disabled = false; });
+}
+
+function renderMissingList(items, byLibrary) {
+    const container = document.getElementById('missingList');
+    let html = '';
+    
+    for (const libName of Object.keys(byLibrary).sort()) {
+        const libItems = byLibrary[libName];
+        if (libItems.length === 0) continue;
+        
+        const libId = 'lib_' + libName.replace(/[^a-zA-Z0-9]/g, '_');
+        
+        html += '<div class="missing-library">';
+        html += '<div class="library-header" onclick="toggleLibrary(\\'' + libId + '\\')">';
+        html += '<input type="checkbox" checked onclick="event.stopPropagation();toggleLibraryItems(\\'' + libId + '\\', this.checked)">';
+        html += '<span>' + escapeHtml(libName) + ' (' + libItems.length + ' items)</span>';
+        html += '</div>';
+        html += '<div class="library-items" id="' + libId + '">';
+        
+        for (const item of libItems) {
+            const itemId = item.id || (item.title + '_' + (item.year || ''));
+            const typeClass = item.type === 'movie' ? 'movie' : 'show';
+            const yearStr = item.year ? ' (' + item.year + ')' : '';
+            const metaInfo = item.reason || '';
+            
+            html += '<div class="missing-item">';
+            html += '<input type="checkbox" checked data-library="' + libId + '" data-item-id="' + escapeHtml(itemId) + '" data-type="' + item.type + '" onchange="updateSelectionCount()">';
+            html += '<div class="missing-item-info">';
+            html += '<div class="missing-item-title">';
+            html += '<span class="missing-item-type ' + typeClass + '">' + item.type + '</span>';
+            html += escapeHtml(item.title) + yearStr;
+            html += '</div>';
+            if (metaInfo) {
+                html += '<div class="missing-item-meta">' + escapeHtml(metaInfo) + '</div>';
+            }
+            html += '</div></div>';
+        }
+        
+        html += '</div></div>';
+    }
+    
+    container.innerHTML = html;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function toggleLibrary(libId) {
+    const el = document.getElementById(libId);
+    el.classList.toggle('show');
+}
+
+function toggleAllLibraries() {
+    const items = document.querySelectorAll('.library-items');
+    const anyHidden = Array.from(items).some(el => !el.classList.contains('show'));
+    items.forEach(el => {
+        if (anyHidden) {
+            el.classList.add('show');
+        } else {
+            el.classList.remove('show');
+        }
+    });
+}
+
+function toggleLibraryItems(libId, checked) {
+    const checkboxes = document.querySelectorAll('input[data-library="' + libId + '"]');
+    checkboxes.forEach(cb => cb.checked = checked);
+    updateSelectionCount();
+}
+
+function selectAll() {
+    document.querySelectorAll('.missing-item input[type="checkbox"]').forEach(cb => cb.checked = true);
+    document.querySelectorAll('.library-header input[type="checkbox"]').forEach(cb => cb.checked = true);
+    updateSelectionCount();
+}
+
+function selectNone() {
+    document.querySelectorAll('.missing-item input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.querySelectorAll('.library-header input[type="checkbox"]').forEach(cb => cb.checked = false);
+    updateSelectionCount();
+}
+
+function selectMovies() {
+    document.querySelectorAll('.missing-item input[type="checkbox"]').forEach(cb => {
+        cb.checked = cb.dataset.type === 'movie';
+    });
+    updateLibraryHeaderCheckboxes();
+    updateSelectionCount();
+}
+
+function selectShows() {
+    document.querySelectorAll('.missing-item input[type="checkbox"]').forEach(cb => {
+        cb.checked = cb.dataset.type === 'show';
+    });
+    updateLibraryHeaderCheckboxes();
+    updateSelectionCount();
+}
+
+function updateLibraryHeaderCheckboxes() {
+    document.querySelectorAll('.missing-library').forEach(lib => {
+        const header = lib.querySelector('.library-header input[type="checkbox"]');
+        const items = lib.querySelectorAll('.missing-item input[type="checkbox"]');
+        const checkedItems = lib.querySelectorAll('.missing-item input[type="checkbox"]:checked');
+        header.checked = checkedItems.length === items.length;
+        header.indeterminate = checkedItems.length > 0 && checkedItems.length < items.length;
+    });
+}
+
+function updateSelectionCount() {
+    const checked = document.querySelectorAll('.missing-item input[type="checkbox"]:checked').length;
+    const total = document.querySelectorAll('.missing-item input[type="checkbox"]').length;
+    document.getElementById('selectionCount').textContent = checked + ' of ' + total + ' selected';
+    updateLibraryHeaderCheckboxes();
+}
+
+function getSelectedItems() {
+    const selected = [];
+    document.querySelectorAll('.missing-item input[type="checkbox"]:checked').forEach(cb => {
+        const itemId = cb.dataset.itemId;
+        // Find the matching item in our data
+        for (const item of missingItemsData) {
+            const id = item.id || (item.title + '_' + (item.year || ''));
+            if (id === itemId) {
+                selected.push(item);
+                break;
+            }
+        }
+    });
+    return selected;
+}
+
+function restoreSelected() {
+    const selected = getSelectedItems();
+    if (selected.length === 0) {
+        showStatus('reviewStatus', 'No items selected', 'error');
+        return;
+    }
+    
+    const force = document.getElementById('reviewForceRequest').checked;
+    
+    if (!confirm('Create requests for ' + selected.length + ' selected items?' + (force ? ' Force mode will clear existing media data.' : ''))) {
+        return;
+    }
+    
+    document.getElementById('restoreSelectedBtn').disabled = true;
+    showOutput('reviewOutput');
+    showStatusLoading('reviewStatus', 'Creating requests for ' + selected.length + ' items...');
+    
+    fetch('/api/restore-selected', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            backup_file: currentBackupFile,
+            selected_items: selected,
+            force: force
+        })
+    }).then(r => r.json()).then(d => {
+        document.getElementById('reviewOutput').textContent = d.output || 'No output';
+        showStatus('reviewStatus', d.success ? 'Restore complete - check Overseerr for new requests' : 'Failed: ' + d.error, d.success ? 'success' : 'error');
+    }).catch(e => showStatus('reviewStatus', 'Error: ' + e, 'error'))
+    .finally(() => { document.getElementById('restoreSelectedBtn').disabled = false; });
+}
+
+function startRestoreBatch() {
+    const b = document.getElementById('restoreFile').value,
+          s = parseInt(document.getElementById('batchSize').value),
+          f = document.getElementById('forceRequest').checked;
+    
+    if (!b) {
+        showStatus('restoreStatus', 'Please select a backup file', 'error');
+        return;
+    }
+    
+    document.getElementById('restoreBatchBtn').disabled = true;
+    showOutput('restoreOutput');
+    showStatusLoading('restoreStatus', f ? 'Creating requests with force mode (batch size: ' + s + ')...' : 'Creating requests (batch size: ' + s + ')...');
+    
+    fetch('/api/restore-batch', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({backup_file: b, batch_limit: s, force: f})
+    }).then(r => r.json()).then(d => {
+        document.getElementById('restoreOutput').textContent = d.output || 'No output';
+        showStatus('restoreStatus', d.success ? 'Batch complete - check Overseerr for new requests' : 'Failed: ' + d.error, d.success ? 'success' : 'error');
+    }).catch(e => showStatus('restoreStatus', 'Error', 'error'))
+    .finally(() => { document.getElementById('restoreBatchBtn').disabled = false; });
+}
+
+function startRestoreFull() {
+    const b = document.getElementById('restoreFile').value,
+          s = parseInt(document.getElementById('batchSize').value),
+          f = document.getElementById('forceRequest').checked;
+    
+    if (!b) {
+        showStatus('restoreStatus', 'Please select a backup file', 'error');
+        return;
+    }
+    
+    if (!confirm('Create requests for ALL missing items?' + (f ? ' Force mode will clear existing media data.' : '') + ' This may create many requests in Overseerr.')) {
+        return;
+    }
+    
+    document.getElementById('restoreFullBtn').disabled = true;
+    showOutput('restoreOutput');
+    showStatusLoading('restoreStatus', f ? 'Creating all requests with force mode...' : 'Creating all requests...');
+    
+    fetch('/api/restore-full', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({backup_file: b, batch_limit: s, force: f})
+    }).then(r => r.json()).then(d => {
+        document.getElementById('restoreOutput').textContent = d.output || 'No output';
+        showStatus('restoreStatus', d.success ? 'All requests created - check Overseerr' : 'Failed: ' + d.error, d.success ? 'success' : 'error');
+    }).catch(e => showStatus('restoreStatus', 'Error', 'error'))
+    .finally(() => { document.getElementById('restoreFullBtn').disabled = false; });
+}
+
+function showStatus(e, m, t) {
+    const el = document.getElementById(e);
+    el.innerHTML = '<div class="status-text">' + m + '</div>';
+    el.className = 'status show status-' + t;
+}
+
+function showStatusLoading(e, m) {
+    const el = document.getElementById(e);
+    el.innerHTML = '<div class="status-text"><span class="spinner"></span> ' + m + '</div>';
+    el.className = 'status show status-info';
+}
+
+function showOutput(e) {
+    document.getElementById(e).classList.add('show');
+}
+</script>
+</body>
+</html>
+"""
+
 
 @app.route('/')
 def index():
@@ -298,129 +933,185 @@ def backup():
             except Exception as e:
                 logger.warning(f"Compression failed: {e}")
                 output.append(f"Compression failed: {e}")
-                final_file = backup_file
         
-        return jsonify({'success': process.returncode == 0, 'file': str(final_file), 'output': '\n'.join(output)})
+        return jsonify({'success': process.returncode == 0, 'output': '\n'.join(output), 'file': str(final_file)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e), 'output': ''})
 
 
-@app.route('/api/review-missing', methods=['POST'])
-def review_missing():
+def load_backup_file(backup_file_path):
+    """Load and decompress backup file if needed"""
+    import gzip
+    
+    # Try multiple possible paths
+    possible_paths = [
+        Path(backup_file_path),
+        Path('./backups') / backup_file_path,
+        Path(config.get('backup_dir', './backups')) / backup_file_path,
+    ]
+    
+    backup_file = None
+    for path in possible_paths:
+        if path.exists():
+            backup_file = path
+            break
+    
+    if backup_file is None:
+        return None, f'Backup file not found: {backup_file_path}'
+    
     try:
-        data = request.json
-        backup_file_path = data['backup_file']
-        
-        # Try multiple possible paths
-        possible_paths = [
-            Path(backup_file_path),
-            Path('./backups') / backup_file_path,
-            Path(config.get('backup_dir', './backups')) / backup_file_path,
-        ]
-        
-        backup_file = None
-        for path in possible_paths:
-            if path.exists():
-                backup_file = path
-                break
-        
-        if backup_file is None:
-            return jsonify({'success': False, 'error': f'Backup file not found: {backup_file_path}', 'output': ''})
-        
-        # Handle both .json and .json.gz files
-        if backup_file.suffix == '.gz' or str(backup_file).endswith('.json.gz'):
-            import gzip
+        # Check if it's gzipped
+        if str(backup_file).endswith('.gz'):
             with gzip.open(backup_file, 'rt', encoding='utf-8') as f:
                 backup_data = json.load(f)
         else:
             with open(backup_file, 'r', encoding='utf-8') as f:
                 backup_data = json.load(f)
+        return backup_data, backup_file
+    except Exception as e:
+        return None, f'Error loading backup: {e}'
+
+
+def analyze_missing_items(backup_data):
+    """Analyze backup and return missing items with full metadata"""
+    missing_items = []
+    by_library = {}
+    
+    for lib_name, items in backup_data.get('libraries', {}).items():
+        by_library[lib_name] = []
         
-        missing_items = []
-        by_library = {}
-        
-        for lib_name, items in backup_data.get('libraries', {}).items():
-            by_library[lib_name] = []
+        for item in items:
+            is_missing = False
+            reason = ""
             
-            for item in items:
-                is_missing = False
-                reason = ""
-                
-                if item['type'] == 'movie':
-                    # For movies, check if file exists on disk NOW
-                    file_path = item.get('file_path', '')
-                    if file_path and file_path != "TV Show (multiple episodes)":
-                        try:
-                            path = Path(file_path)
-                            if not path.exists():
-                                is_missing = True
-                                reason = "File not found on disk"
-                            else:
-                                # File exists now - show current size
-                                size_mb = path.stat().st_size / (1024 * 1024)
-                                reason = f"OK ({size_mb:.1f} MB)"
-                        except Exception as e:
+            if item['type'] == 'movie':
+                file_path = item.get('file_path', '')
+                if file_path:
+                    try:
+                        path = Path(file_path)
+                        if not path.exists():
                             is_missing = True
-                            reason = f"Error checking: {e}"
-                    else:
-                        # No file path recorded
-                        is_missing = not item.get('file_exists', True)
-                        reason = item.get('file_status', 'Unknown')
-                
-                elif item['type'] == 'show':
-                    # Check if we have detailed episode data
-                    if item.get('detailed') and 'season_details' in item:
-                        # Detailed mode - check individual episodes
-                        missing_eps = []
-                        total_eps = 0
-                        
-                        for season in item['season_details']:
-                            season_num = season.get('season_num', 0)
-                            
-                            for ep in season.get('episodes', []):
-                                total_eps += 1
-                                file_path = ep.get('file_path', '')
-                                ep_num = ep.get('episode_num', 0)
-                                
-                                ep_missing = False
-                                if file_path:
-                                    try:
-                                        if not Path(file_path).exists():
-                                            ep_missing = True
-                                    except:
-                                        ep_missing = True
-                                elif not ep.get('file_exists', True):
-                                    ep_missing = True
-                                
-                                if ep_missing:
-                                    missing_eps.append(f"S{season_num:02d}E{ep_num:02d}")
-                        
-                        if missing_eps:
-                            is_missing = True
-                            if len(missing_eps) <= 10:
-                                reason = f"Missing episodes: {', '.join(missing_eps)}"
-                            else:
-                                reason = f"Missing {len(missing_eps)}/{total_eps} episodes: {', '.join(missing_eps[:5])}... and {len(missing_eps)-5} more"
-                            item['missing_episodes_list'] = missing_eps
+                            reason = "File not found on disk"
                         else:
-                            reason = f"TV Show: {total_eps} episodes (all present)"
+                            size_mb = path.stat().st_size / (1024 * 1024)
+                            reason = f"OK ({size_mb:.1f} MB)"
+                    except Exception as e:
+                        is_missing = True
+                        reason = f"Error checking: {e}"
+                else:
+                    is_missing = not item.get('file_exists', True)
+                    reason = item.get('file_status', 'Unknown')
+            
+            elif item['type'] == 'show':
+                if item.get('detailed') and 'season_details' in item:
+                    missing_eps = []
+                    total_eps = 0
+                    
+                    for season in item['season_details']:
+                        season_num = season.get('season_num', 0)
+                        
+                        for ep in season.get('episodes', []):
+                            total_eps += 1
+                            file_path = ep.get('file_path', '')
+                            ep_num = ep.get('episode_num', 0)
+                            
+                            ep_missing = False
+                            if file_path:
+                                try:
+                                    if not Path(file_path).exists():
+                                        ep_missing = True
+                                except:
+                                    ep_missing = True
+                            elif not ep.get('file_exists', True):
+                                ep_missing = True
+                            
+                            if ep_missing:
+                                missing_eps.append(f"S{season_num:02d}E{ep_num:02d}")
+                    
+                    if missing_eps:
+                        is_missing = True
+                        if len(missing_eps) <= 10:
+                            reason = f"Missing episodes: {', '.join(missing_eps)}"
+                        else:
+                            reason = f"Missing {len(missing_eps)}/{total_eps} episodes"
+                        item['missing_episodes_list'] = missing_eps
                     else:
-                        # Standard mode - just report counts
-                        episodes = item.get('episodes', 0)
-                        seasons = item.get('seasons', 0)
-                        reason = f"TV Show: {seasons} seasons, {episodes} episodes"
-                        # TV shows are not marked missing unless they had 0 episodes
-                        is_missing = (episodes == 0)
+                        reason = f"TV Show: {total_eps} episodes (all present)"
+                else:
+                    episodes = item.get('episodes', 0)
+                    seasons = item.get('seasons', 0)
+                    reason = f"TV Show: {seasons} seasons, {episodes} episodes"
+                    is_missing = (episodes == 0)
+            
+            if is_missing:
+                # Create a unique ID for the item
+                item_id = f"{item.get('title', 'Unknown')}_{item.get('year', '')}"
                 
-                if is_missing:
-                    missing_items.append({
-                        'library': lib_name,
-                        'title': item.get('title', 'Unknown'),
-                        'type': item['type'],
-                        'year': item.get('year'),
-                        'reason': reason
-                    })
-                    by_library[lib_name].append(item)
+                missing_item = {
+                    'id': item_id,
+                    'library': lib_name,
+                    'title': item.get('title', 'Unknown'),
+                    'type': item['type'],
+                    'year': item.get('year'),
+                    'reason': reason,
+                    'tmdb_id': item.get('tmdb_id'),
+                    'tvdb_id': item.get('tvdb_id'),
+                    'imdb_id': item.get('imdb_id'),
+                }
+                
+                # Include episode details for shows
+                if item['type'] == 'show':
+                    missing_item['seasons'] = item.get('seasons')
+                    missing_item['episodes'] = item.get('episodes')
+                    if item.get('missing_episodes_list'):
+                        missing_item['missing_episodes_list'] = item['missing_episodes_list']
+                
+                missing_items.append(missing_item)
+                by_library[lib_name].append(missing_item)
+    
+    return missing_items, by_library
+
+
+@app.route('/api/get-missing-items', methods=['POST'])
+def get_missing_items():
+    """Get missing items as JSON for selective restore"""
+    try:
+        data = request.json
+        backup_file_path = data['backup_file']
+        
+        result, backup_file_or_error = load_backup_file(backup_file_path)
+        if result is None:
+            return jsonify({'success': False, 'error': backup_file_or_error})
+        
+        backup_data = result
+        missing_items, by_library = analyze_missing_items(backup_data)
+        
+        return jsonify({
+            'success': True,
+            'items': missing_items,
+            'by_library': by_library,
+            'total': len(missing_items)
+        })
+    except Exception as e:
+        logger.error(f"Get missing items error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/review-missing', methods=['POST'])
+def review_missing():
+    """Original review endpoint - returns text output"""
+    try:
+        data = request.json
+        backup_file_path = data['backup_file']
+        
+        result, backup_file_or_error = load_backup_file(backup_file_path)
+        if result is None:
+            return jsonify({'success': False, 'error': backup_file_or_error, 'output': ''})
+        
+        backup_data = result
+        backup_file = backup_file_or_error
+        
+        missing_items, by_library = analyze_missing_items(backup_data)
         
         # Format output
         output = "="*80 + "\n"
@@ -431,11 +1122,6 @@ def review_missing():
             output += f"Original Stats: {backup_data['stats'].get('total_items', '?')} items, "
             output += f"{backup_data['stats'].get('movies', '?')} movies, "
             output += f"{backup_data['stats'].get('shows', '?')} shows\n"
-            if backup_data['stats'].get('episodes', 0) > 0:
-                output += f"Detailed Episodes: {backup_data['stats'].get('episodes', 0)} tracked"
-                if backup_data['stats'].get('missing_episodes', 0) > 0:
-                    output += f" ({backup_data['stats'].get('missing_episodes', 0)} missing at backup time)"
-                output += "\n"
         output += "="*80 + "\n\n"
         
         for lib_name in sorted(by_library.keys()):
@@ -446,16 +1132,8 @@ def review_missing():
                     year = f" ({item.get('year')})" if item.get('year') else ""
                     item_type = item.get('type', 'unknown')
                     output += f"  [{item_type.upper()}] {item.get('title', 'Unknown')}{year}\n"
-                    
-                    # Show missing episodes for detailed TV shows
-                    if item.get('missing_episodes_list'):
-                        missing_eps = item['missing_episodes_list']
-                        if len(missing_eps) <= 15:
-                            output += f"         Missing: {', '.join(missing_eps)}\n"
-                        else:
-                            output += f"         Missing {len(missing_eps)} episodes: {', '.join(missing_eps[:10])}... and {len(missing_eps)-10} more\n"
-                    elif item.get('file_status'):
-                        output += f"         Status: {item.get('file_status')}\n"
+                    if item.get('reason'):
+                        output += f"         {item.get('reason')}\n"
                 output += "\n"
         
         output += "\n" + "="*80 + "\n"
@@ -465,20 +1143,116 @@ def review_missing():
             output += f"  {lib_name}: {len(by_library[lib_name])} missing\n"
         output += f"\nTotal missing: {len(missing_items)}\n"
         
-        # Check if backup has detailed episode data
-        has_detailed = any(
-            item.get('detailed') 
-            for items in backup_data.get('libraries', {}).values() 
-            for item in items if item.get('type') == 'show'
-        )
-        if has_detailed:
-            output += "\n(Backup includes detailed episode tracking - individual episodes verified)\n"
-        else:
-            output += "\n(Note: Backup without detailed episodes - TV shows show counts only)\n"
-        
         return jsonify({'success': True, 'output': output, 'total': len(missing_items)})
     except Exception as e:
         logger.error(f"Review error: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e), 'output': ''})
+
+
+@app.route('/api/restore-selected', methods=['POST'])
+def restore_selected():
+    """Restore only selected items to Overseerr"""
+    try:
+        import requests as req
+        import time
+        import urllib3
+        
+        # Suppress SSL warnings if needed
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        data = request.json
+        selected_items = data.get('selected_items', [])
+        force = data.get('force', False)
+        
+        if not selected_items:
+            return jsonify({'success': False, 'error': 'No items selected', 'output': ''})
+        
+        overseerr_url = config.get('overseerr_url', '').rstrip('/')
+        overseerr_token = config.get('overseerr_token', '')
+        
+        if not overseerr_url or not overseerr_token:
+            return jsonify({'success': False, 'error': 'Overseerr URL and token required', 'output': ''})
+        
+        # Create session - try with SSL verification first
+        session = req.Session()
+        session.trust_env = False
+        session.headers.update({
+            'X-Api-Key': overseerr_token,
+            'Content-Type': 'application/json'
+        })
+        
+        output = []
+        stats = {'created': 0, 'skipped': 0, 'errors': 0}
+        
+        output.append(f"Processing {len(selected_items)} selected items...")
+        output.append("")
+        
+        for item in selected_items:
+            title = item.get('title', 'Unknown')
+            item_type = item.get('type', 'movie')
+            year = item.get('year', '')
+            tmdb_id = item.get('tmdb_id')
+            
+            try:
+                # Both movies and TV shows need TMDB ID for Overseerr
+                if not tmdb_id:
+                    output.append(f"[SKIP] {title} - No TMDB ID")
+                    stats['skipped'] += 1
+                    continue
+                
+                if item_type == 'movie':
+                    request_data = {
+                        'mediaType': 'movie',
+                        'mediaId': int(tmdb_id)
+                    }
+                else:
+                    # TV show - request all seasons
+                    request_data = {
+                        'mediaType': 'tv',
+                        'mediaId': int(tmdb_id),
+                        'seasons': 'all'
+                    }
+                
+                # Submit request
+                response = session.post(
+                    f'{overseerr_url}/api/v1/request',
+                    json=request_data,
+                    timeout=30
+                )
+                
+                if response.status_code in (200, 201, 202):
+                    output.append(f"[OK] {title} ({year}) - Request created")
+                    stats['created'] += 1
+                elif response.status_code == 409:
+                    output.append(f"[EXISTS] {title} ({year}) - Already requested or available")
+                    stats['skipped'] += 1
+                else:
+                    output.append(f"[FAIL] {title} ({year}) - HTTP {response.status_code}")
+                    stats['errors'] += 1
+                
+                # Rate limiting
+                time.sleep(0.5)
+                
+            except Exception as e:
+                output.append(f"[ERROR] {title} - {str(e)}")
+                stats['errors'] += 1
+        
+        output.append("")
+        output.append("="*50)
+        output.append("SUMMARY")
+        output.append(f"  Requests created: {stats['created']}")
+        output.append(f"  Skipped: {stats['skipped']}")
+        output.append(f"  Errors: {stats['errors']}")
+        output.append("="*50)
+        
+        return jsonify({
+            'success': True,
+            'output': '\n'.join(output),
+            'stats': stats
+        })
+        
+    except Exception as e:
+        logger.error(f"Restore selected error: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e), 'output': ''})
 
 

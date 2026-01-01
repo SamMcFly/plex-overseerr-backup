@@ -45,14 +45,17 @@ Overseerr must update its cache to know files are missing:
 
 Use the backup file you created BEFORE the disaster:
 
-1. Open web UI → "Restore" tab
+1. Open web UI → "Review & Select" tab
 2. Select your **pre-disaster backup file** (supports both `.json` and `.json.gz`)
-3. Go to "Review Missing" tab to see what will be restored
-4. Verify the list is correct
-5. Click "Batch" to start restore
-6. Overseerr will request missing content
-7. Approve requests and monitor Overseerr for downloads
-8. Click "Batch" again to continue with more files
+3. Click "Load Missing Items" to see what can be restored
+4. **Uncheck any items you don't want to restore** (e.g., shows you've finished watching)
+5. Click "Restore Selected" to submit requests to Overseerr
+6. Approve requests and monitor Overseerr for downloads
+
+**Alternative: Restore All**
+If you want to restore everything without selecting:
+1. Use the "Restore (All)" tab instead
+2. Click "Batch" to restore in batches, or "Full" for all at once
 
 ### Why This Order Matters
 
@@ -85,7 +88,8 @@ Without clearing Radarr/Sonarr entries:
 ## Features
 
 - 📦 **Backup Plex Library** - Exports metadata for movies and TV shows
-- 📋 **Review Missing Files** - See what was missing at backup time
+- ✅ **Selective Restore** - Choose exactly which items to restore (skip finished shows, etc.)
+- 📋 **Review Missing Files** - See what's missing with interactive checkboxes
 - 🔄 **Restore via Overseerr** - Submit requests for missing content
 - 🎬 **Movie & TV Support** - Handles both types with episode counting
 - 📺 **Detailed Episode Tracking** - Optional per-episode file verification for TV shows
@@ -157,6 +161,25 @@ Then open `http://localhost:5000` in your browser.
 
 **Note:** API tokens are stored in plain text in `config.json`. Keep this file secure.
 
+### Web Interface Tabs
+
+**Backup Tab:**
+- Create backups of your Plex library
+- Optional detailed episode tracking
+- Automatic gzip compression
+
+**Review & Select Tab:**
+- Load a backup and see all missing items
+- Interactive list with checkboxes for each item
+- Filter by Movies Only or Shows Only
+- Uncheck items you don't want to restore (finished shows, etc.)
+- Click "Restore Selected" to submit only checked items to Overseerr
+
+**Restore (All) Tab:**
+- Restore all missing items without selection
+- Batch mode for controlled restores
+- Full mode for restoring everything at once
+
 ### Option B: Automated Backups
 
 Use the backup scheduler for automatic daily or weekly backups:
@@ -220,6 +243,27 @@ python plex_overseerr_backup.py \
   --force
 ```
 
+## Selective Restore
+
+The "Review & Select" tab lets you choose exactly which missing items to restore. This is useful when:
+
+- **You've finished watching a series** and don't want it re-downloaded
+- **You intentionally deleted content** to free up space
+- **You only want to restore movies** (use "Movies Only" filter)
+- **You only want to restore TV shows** (use "Shows Only" filter)
+
+**How to use:**
+1. Go to "Review & Select" tab
+2. Load your backup file
+3. All missing items appear with checkboxes (checked by default)
+4. Uncheck items you don't want to restore
+5. Use "Select All", "Select None", "Movies Only", or "Shows Only" for quick filtering
+6. Click "Restore Selected" to submit only the checked items
+
+**Why not just use Radarr/Sonarr sync?**
+
+If you periodically "clean out" the *arr tools — removing completed downloads to keep them lean — that history is gone. Also, not everything in your library may have come through the *arr stack (DVD/Blu-ray rips, files from before automation, etc.). This tool backs up what Plex actually has on disk, regardless of how it got there.
+
 ## Backup Modes
 
 ### Standard Mode (Default)
@@ -281,38 +325,18 @@ Both `.json` and `.json.gz` files are supported for restore and review operation
 
 1. Files have been lost from storage (disaster occurred)
 2. Follow the "Disaster Recovery" steps above (Plex scan, Overseerr sync)
-3. Create new backup to detect what's missing
-4. Review missing files
-5. Open web UI → "Restore" tab
-6. Select your backup file (`.json` or `.json.gz`)
-7. Choose batch size (smaller = safer)
-8. Click "Batch" to start
-9. Watch Overseerr for new requests
-10. Approve requests and let them download
-11. Click "Batch" again to continue with more files
+3. Open web UI → "Review & Select" tab
+4. Load your pre-disaster backup file
+5. Review missing items and **uncheck anything you don't want restored**
+6. Click "Restore Selected"
+7. Check Overseerr for new requests
+8. Approve requests and monitor downloads
 
-## Important Limitations
+## Force Mode
 
-### Force Re-Request Mode
+Force Overseerr to re-request content even if it thinks files exist:
 
-If Overseerr ignores your restore requests because it thinks content already exists, use **Force Mode**:
-
-**Web UI:** 
-1. Configure Radarr/Sonarr URLs and API tokens in Settings (optional but recommended)
-2. Check "Force re-request (clear existing media data)" in the Restore tab
-
-**Command Line:**
 ```bash
-# Basic force mode (Overseerr only)
-python plex_overseerr_backup.py \
-  --plex-url http://localhost:32400 \
-  --plex-token YOUR_PLEX_TOKEN \
-  --import backups/plex_backup.json \
-  --overseerr-url http://localhost:5055 \
-  --overseerr-token YOUR_OVERSEERR_TOKEN \
-  --force
-
-# Full force mode (Overseerr + Radarr + Sonarr)
 python plex_overseerr_backup.py \
   --plex-url http://localhost:32400 \
   --plex-token YOUR_PLEX_TOKEN \
@@ -339,6 +363,8 @@ python plex_overseerr_backup.py \
 - Overseerr shows "Already Requested" for content you need
 
 **Note:** For Radarr/Sonarr, Force Mode triggers searches for missing content rather than deleting entries. This preserves your library history while still initiating downloads. Files are never deleted (deleteFiles=false). For disaster recovery, this is usually exactly what you want.
+
+## Important Limitations
 
 ### Review Missing Now Dynamically Checks Files
 
@@ -475,7 +501,7 @@ Example (detailed episode mode):
 ## Troubleshooting
 
 ### "Cannot read properties of undefined (reading 'filter')"
-This error from Overseerr means the seasons parameter is wrong. Make sure you're using version 3.0+.
+This error from Overseerr means the seasons parameter is wrong. Make sure you're using version 3.1+.
 
 ### Requests not appearing in Overseerr
 - Check that the API key is valid
@@ -505,7 +531,7 @@ This error from Overseerr means the seasons parameter is wrong. Make sure you're
 2. Run "Optimize Library" or scan
 3. Wait for scan to complete
 4. Create a new backup
-5. Check "Review Missing" again
+5. Check "Review & Select" again
 
 ### "Overseerr ignores restore requests"
 **Cause:** Overseerr cache doesn't know files are gone
